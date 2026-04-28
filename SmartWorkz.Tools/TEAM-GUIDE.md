@@ -1,20 +1,6 @@
-# SmartWorkz.Tools - Complete Team Guide
+# SmartWorkz.Tools - Complete Team Guide (Azure DevOps)
 
-**Everything you need to know - from project creation to code review**
-
----
-
-## Table of Contents
-
-1. [Quick Start (5 minutes)](#quick-start)
-2. [Creating a New Project](#creating-a-new-project)
-3. [Git Workflow](#git-workflow)
-4. [Commit Message Format](#commit-message-format)
-5. [Code Review Process](#code-review-process)
-6. [Team Roles](#team-roles)
-7. [Branch Protection Rules](#branch-protection-rules)
-8. [Files Created](#files-created)
-9. [Troubleshooting](#troubleshooting)
+**Everything you need to know - from project creation to code review in Azure DevOps**
 
 ---
 
@@ -32,35 +18,44 @@ dotnet run -- --name "MyProject" --type "DotNet"
 - ✅ Azure DevOps project created
 - ✅ Repository cloned to `S:\SmartWorkz101\MyProject`
 - ✅ Git hooks installed (commit validation)
-- ✅ CODEOWNERS configured (auto reviewer assignment)
-- ✅ PR template ready
+- ✅ Configuration files generated
 - ✅ Team roles defined
+- ✅ Branch policy guide created
 
 **Step 3: Update team members**
 ```bash
 cd S:\SmartWorkz101\MyProject
-code .github/TEAM.yml
-# Edit with your actual team members
+code .azuredevops/TEAM.yml
+# Edit with your actual team members (use Azure AD emails)
 ```
 
-### For Admins (20 minutes)
+### For Admins (30 minutes)
 
 After developers create the project:
 
-1. **Create GitHub teams** at https://github.com/orgs/smartworkz/teams
-   - admins
-   - team-leads
-   - senior-developers
-   - code-quality-team
-   - security-team
+1. **Create Azure DevOps groups**
+   - Go to: Project Settings → Security → Groups
+   - Create: admins, team-leads, senior-developers, code-quality-team, security-team
 
-2. **Add team members** to each team
+2. **Add team members**
+   - Use Azure AD usernames (email format)
+   - Add members from .azuredevops/TEAM.yml
 
-3. **Set branch protection** at https://github.com/smartworkz/MyProject/settings/branches
-   - **main**: 2 approvals required, status checks required
-   - **develop**: 1 approval required, status checks required
+3. **Configure branch policies**
+   - Go to: Repos → Branches
+   - Select main branch → Branch policies
+   - Set 2 approvals, status checks required
+   - Select develop branch → Branch policies
+   - Set 1 approval, status checks required
 
-4. **Verify** with a test PR
+4. **Configure code review policies**
+   - Go to: Project Settings → Repositories → [Repo Name] → Policies
+   - Add policies following .azuredevops/CODEOWNERS guide
+
+5. **Test with a PR**
+   - Create test feature branch
+   - Submit PR
+   - Verify policies are enforced
 
 ---
 
@@ -94,34 +89,31 @@ dotnet run -- --name "MyDataService" --type "DotNet"
 3. ✅ Create folder structure
 4. ✅ Generate configuration files
 5. ✅ Install Git hooks
-6. ✅ Create CODEOWNERS
-7. ✅ Create PR template
-8. ✅ Create team config
-9. ✅ Commit and push
+6. ✅ Create CODEOWNERS guide
+7. ✅ Create team configuration
+8. ✅ Commit and push
 ```
-
-**Time Required:** ~10 seconds
 
 ---
 
-## Git Workflow
+## Git Workflow (Git Flow)
 
-### Branch Strategy (Git Flow)
+### Branch Strategy
 
 ```
 main (Production)
-  ├─ Branch protection: 2 approvals required
-  ├─ Status checks: Required
-  └─ Force push: Disabled
+  ├─ 2 approvals required
+  ├─ Status checks required
+  └─ For: releases, hotfixes
 
 develop (Staging)
-  ├─ Branch protection: 1 approval required
-  ├─ Status checks: Required
-  └─ Force push: Disabled
+  ├─ 1 approval required
+  ├─ Status checks required
+  └─ For: feature integration
 
-feature/TASK-###-name
+feature/TASK-###-name (Development)
   ├─ Created from: develop
-  ├─ Approved by: Reviewers
+  ├─ Approval: via PR
   └─ Merged via: Squash merge
 ```
 
@@ -145,19 +137,20 @@ git commit -m "feat(scope): description"
 **Step 3: Push and create PR**
 ```bash
 git push -u origin feature/TASK-123-description
-# Go to GitHub → Create Pull Request
+# Go to Azure DevOps → Pull Requests → New PR
 ```
 
 **Step 4: Request review**
-- GitHub auto-assigns reviewers based on CODEOWNERS
+- Azure DevOps auto-assigns reviewers based on policies
 - Reviewers will see the PR template
 - Wait for approvals
 
 **Step 5: Merge**
 ```bash
-# Once approved, merge via GitHub UI
-# Use "Squash and merge" for develop
-# Use "Create merge commit" for main
+# Once approved (2 for main, 1 for develop):
+# Click "Complete" in Azure DevOps UI
+# Use "Squash commit" for develop
+# Use "Merge commit" for main
 ```
 
 ### Fixing a Bug
@@ -224,8 +217,6 @@ refactor(api): simplify request processing
 docs(readme): update setup instructions
 test(generator): add unit tests
 perf(console): optimize file operations
-chore(deps): update dependencies
-ci(pipeline): add code quality stage
 ```
 
 ❌ **Invalid Commits:**
@@ -233,17 +224,7 @@ ci(pipeline): add code quality stage
 add feature              # Missing type and scope
 Fixed bug               # Type lowercase, missing scope
 Updated code            # Too vague
-commit without format   # Wrong format
-This is a commit that is way too long and exceeds the maximum allowed character limit
 ```
-
-### Rules
-
-- **Format:** `type(scope): description` (required)
-- **Length:** 10-100 characters
-- **Imperative mood:** "add" not "added"
-- **No period at end**
-- **One logical change per commit**
 
 ### Git Hook Behavior
 
@@ -264,289 +245,222 @@ git commit -m "add feature"
 ```
 - Missing type and scope
 - **Result:** Commit rejected ❌
-```
-❌ Invalid commit message format!
-
-Required format: type(scope): description
-
-Types: feat, fix, refactor, perf, docs, test, chore, ci
-Scopes: console, generator, api, git, files, docs
-
-Example: feat(generator): add custom path support
-```
 
 ---
 
-## Code Review Process
+## Code Review Process (Azure DevOps)
 
 ### For Developers (Creating PR)
 
-**Step 1: Fill out PR template**
+**Step 1: Fill out PR description**
 
-When you create a PR, this template appears:
+When you create a PR, add:
+- Description of changes
+- Type of change (feat, fix, refactor, etc.)
+- Testing performed
+- Related work items
 
-```markdown
-## Description
-Briefly describe the changes.
+**Step 2: Link work item**
 
-## Type of Change
-- [ ] Feature (new functionality)
-- [ ] Bug Fix (addressing an issue)
-- [ ] Refactor (code improvement)
-- [ ] Documentation (docs only)
-- [ ] Performance Improvement
-- [ ] Security Enhancement
+- Go to: Pull Request → Link work item
+- Select task/bug from Azure Boards
 
-## Related Issues
-Fixes #(issue number)
+**Step 3: Auto-assign reviewers**
 
-## Testing Done
-Describe how you tested these changes.
-- [ ] Unit tests passed
-- [ ] Integration tests passed
-- [ ] Manual testing completed
-- [ ] No new test coverage needed (explain)
-
-## Checklist
-- [ ] Code follows commit message conventions
-- [ ] Self-reviewed the code
-- [ ] Added comments for complex logic
-- [ ] Updated documentation if needed
-- [ ] No new warnings in build
-- [ ] Changes are backward compatible
-- [ ] Security implications considered
-- [ ] Performance impact analyzed
-```
-
-**Step 2: Complete the checklist**
-- Check all boxes
-- Answer all questions
-- Link related issues
-- Describe testing
-
-**Step 3: Request review**
-- GitHub auto-assigns reviewers (from CODEOWNERS)
+- Azure DevOps auto-assigns based on code review policies
 - No manual reviewer selection needed
-- Reviewers will see PR template
 
 **Step 4: Address feedback**
+
 - Read reviewer comments
 - Make requested changes
 - Push new commits
 - Re-request review if needed
 
-**Step 5: Wait for approval**
-- **develop**: 1 approval required
-- **main**: 2 approvals required
+**Step 5: Merge when approved**
+
+- Wait for required approvals (2 for main, 1 for develop)
+- Click "Complete" button
+- Choose merge type:
+  - **Squash commit** for develop
+  - **Merge commit** for main
 
 ### For Reviewers
 
 **When you receive a review request:**
 
-1. **Read PR description** - Understand what changed and why
-2. **Check commit messages** - Are they in correct format?
-3. **Review the code** - Check:
-   - ✓ Logic correctness
-   - ✓ Edge cases handled
-   - ✓ Error handling appropriate
-   - ✓ Code quality good
-   - ✓ Performance impact
-   - ✓ Security implications
-   - ✓ Tests added if needed
+1. **Review the code**
+   - Check logic correctness
+   - Check edge cases
+   - Check error handling
+   - Check code quality
+   - Check performance
+   - Check security
 
-4. **Leave comments**
-   - **MUST FIX** - Blocking issue
-   - **SHOULD FIX** - Strongly recommended
-   - **CONSIDER** - Nice to have
-   - **NITPICK** - Very minor
+2. **Leave comments**
+   - **BLOCKING**: Issue that must be fixed
+   - **SUGGESTION**: Recommended improvement
+   - **QUESTION**: Clarification needed
+   - **PRAISE**: Good practice example
 
-5. **Approve or Request Changes**
+3. **Approve or request changes**
    - ✅ Approve - Code is good
-   - ❌ Request Changes - Need fixes
-   - 💬 Comment - Just feedback
+   - ❌ Request Changes - Need fixes before merge
 
 ### Review Checklist
 
 ```
-□ Code follows commit conventions
-□ Logic is correct
-□ Edge cases handled
-□ Error handling appropriate
-□ No obvious bugs
-□ Code quality good
-□ Performance OK
-□ Security OK
-□ Tests added/updated
-□ Documentation updated
-□ Backward compatible
+✓ Code follows commit conventions
+✓ Logic is correct
+✓ Edge cases handled
+✓ Error handling appropriate
+✓ No obvious bugs
+✓ Code quality good
+✓ Performance OK
+✓ Security OK
+✓ Tests added/updated
+✓ Documentation updated
 ```
 
 ---
 
-## Team Roles
+## Team Roles (Azure DevOps)
 
-### Admins (Project Lead, DevOps Engineer)
+### Admins
 
 **Responsibilities:**
-- ✅ Create Azure DevOps projects
-- ✅ Set up GitHub teams
-- ✅ Configure branch protection
-- ✅ Manage team access
-- ✅ Handle emergency changes
-- ✅ Create service connections
-- ✅ Approve releases to main
+- Create Azure DevOps projects
+- Create and manage groups
+- Configure branch policies
+- Manage team access
+- Handle emergency changes
+- Approve releases to main
 
 **Required Access:**
-- Admin access to GitHub repository
-- Azure DevOps organization admin
-- GitHub organization admin
+- Project admin access
+- Organization admin
 
-### Team Leads (Senior Developers)
+### Team Leads
 
 **Responsibilities:**
-- ✅ Approve PRs to main (2 required)
-- ✅ Approve PRs to develop (1 can approve)
-- ✅ Review critical code paths
-- ✅ Merge approved PRs
-- ✅ Monitor code quality
-- ✅ Enforce team standards
+- Approve PRs to main (2 required)
+- Approve PRs to develop (1 can approve)
+- Review critical code
+- Merge approved PRs
+- Enforce team standards
 
-**PR Approval Authority:**
+**Approval Authority:**
 - **main**: Can approve (2 required)
 - **develop**: Can approve (1 needed)
 
 ### Senior Developers
 
 **Responsibilities:**
-- ✅ Review complex code
-- ✅ Validate architectural decisions
-- ✅ Check performance implications
-- ✅ Mentor junior developers
-- ✅ Set code standards
+- Review complex code
+- Validate architectural decisions
+- Check performance
+- Mentor team members
 
 **Auto-assigned to PRs:**
-- Files in `SmartWorkz.Tools.DevOpsProject/`
+- `SmartWorkz.Tools.DevOpsProject/`
 - `ProjectTemplateGenerator.cs`
-- Any complex code
 
 ### Code Quality Team
 
 **Responsibilities:**
-- ✅ Review configuration files
-- ✅ Check project structure
-- ✅ Validate CI/CD setup
-- ✅ Review linting and formatting
-- ✅ Ensure consistency
+- Review configuration files
+- Check project structure
+- Validate CI/CD setup
+- Review linting config
 
 **Auto-assigned to PRs:**
 - `.editorconfig`
 - `.eslintrc.json`
 - `.prettierrc.json`
 - `azure-pipelines.yml`
-- `sonar-project.properties`
 
 ### Security Team
 
 **Responsibilities:**
-- ✅ Review authentication code
-- ✅ Check token handling
-- ✅ Validate input validation
-- ✅ Check for hardcoded secrets
-- ✅ Security best practices
+- Review authentication code
+- Check token handling
+- Validate input validation
+- Check for hardcoded secrets
 
 **Auto-assigned to PRs:**
-- Files containing: `token`, `auth`, `secret`, `credential`
-- Any security-related changes
+- `**/auth/**`
+- `**/token/**`
+- `**/secret/**`
 
 ---
 
-## Branch Protection Rules
+## Branch Policies (Azure DevOps)
+
+### Configure in Azure DevOps UI
+
+Navigate to: **Repos → Branches → Select branch → Branch policies**
 
 ### main Branch (Production)
 
-**Requirements:**
-- ✅ Pull Request required
-- ✅ 2 approvals required (both team-leads)
-- ✅ Status checks required
-- ✅ Conversation resolution required
-- ✅ Branches must be up to date
-- ✅ Auto-delete head branches
-
-**What's Blocked:**
-- ❌ Direct commits (PR required)
-- ❌ Force push
-- ❌ Merge without 2 approvals
-- ❌ Merge with failing status checks
+**Required Settings:**
+- ✅ Require minimum reviewers: **2**
+- ✅ Reset approval on changes: **Yes**
+- ✅ Allow requesters to approve: **No**
+- ✅ Require status checks: **Yes**
+- ✅ Enforce work item linking: **Optional**
+- ✅ Auto-complete: **No** (manual approval)
 
 ### develop Branch (Staging)
 
-**Requirements:**
-- ✅ Pull Request required
-- ✅ 1 approval required
-- ✅ Status checks required
-- ✅ Branches must be up to date
-- ✅ Auto-delete head branches
+**Required Settings:**
+- ✅ Require minimum reviewers: **1**
+- ✅ Reset approval on changes: **Yes**
+- ✅ Allow requesters to approve: **No**
+- ✅ Require status checks: **Yes**
+- ✅ Enforce work item linking: **Optional**
+- ✅ Auto-complete: **Yes** (merge when ready)
 
-**What's Blocked:**
-- ❌ Direct commits (PR required)
-- ❌ Force push
-- ❌ Merge without 1 approval
-- ❌ Merge with failing status checks
-
-### feature/* Branches (Development)
+### feature/* Branches
 
 **No restrictions:**
-- Developers can force push
+- Direct commits allowed
 - No approval required
-- Can be deleted after merge
+- Force push allowed
 
 ---
 
-## Files Created
-
-### Configuration Files (Automatically Generated)
-
-| File | Purpose |
-|------|---------|
-| `.gitignore` | Version control exclusions |
-| `.editorconfig` | IDE formatting rules |
-| `.eslintrc.json` | TypeScript/JavaScript linting |
-| `.prettierrc.json` | Code formatting standards |
-| `sonar-project.properties` | SonarQube configuration |
-| `azure-pipelines.yml` | CI/CD pipeline (3-stage) |
-| `README.md` | Project documentation |
-
-### Automation Files (Team Collaboration)
-
-| File | Location | Purpose |
-|------|----------|---------|
-| `prepare-commit-msg` | `.git/hooks/` | Shows commit format reminder |
-| `commit-msg` | `.git/hooks/` | Validates commit format |
-| `CODEOWNERS` | `.github/` | Auto-assigns reviewers |
-| `PULL_REQUEST_TEMPLATE.md` | `.github/` | Standardized PR form |
-| `TEAM.yml` | `.github/` | Team definitions |
-
-### Total: 12 Files Auto-Created
-
----
-
-## Automatic Reviewer Assignment (CODEOWNERS)
+## Auto Reviewer Assignment (Code Review Policies)
 
 ### How It Works
 
-When you create a PR, GitHub automatically requests review from teams based on files changed:
+When you create a PR, Azure DevOps automatically assigns reviewers based on:
+- Files changed
+- Code review policies configured
+- Defined path patterns
 
-### Assignment Rules
+### Configure Policies
 
-| Files Changed | Auto-assigned Team |
-|---------------|-------------------|
-| `SmartWorkz.Tools.DevOpsProject/*` | `@smartworkz/senior-developers` |
-| `ProjectTemplateGenerator.cs` | `@smartworkz/senior-developers` |
-| `.editorconfig`, `.eslintrc.json`, `.prettierrc.json` | `@smartworkz/code-quality-team` |
-| `azure-pipelines.yml`, `sonar-project.properties` | `@smartworkz/code-quality-team` |
-| `**/token*`, `**/auth*`, `**/secret*` | `@smartworkz/security-team` |
-| `*.md` files | `@smartworkz/team-leads` |
-| Everything (default) | `@smartworkz/team-leads` |
+**Location:** Project Settings → Repositories → [Repo Name] → Policies
+
+**For each code area, create a policy:**
+
+```
+Pattern: SmartWorkz.Tools.DevOpsProject/
+Reviewers: senior-developers group
+Min Reviewers: 1
+
+Pattern: .editorconfig, .eslintrc.json
+Reviewers: code-quality-team group
+Min Reviewers: 1
+
+Pattern: **/auth/**
+Reviewers: security-team group
+Min Reviewers: 1
+
+Pattern: **
+Reviewers: team-leads group (default)
+Min Reviewers: 1 or 2 (for main)
+```
 
 ### Example
 
@@ -556,9 +470,36 @@ Files Changed:
   - SmartWorkz.Tools.DevOpsProject/ProjectTemplateGenerator.cs
 
 Auto-assigned:
-  - @smartworkz/senior-developers
-  - @smartworkz/team-leads (default)
+  - senior-developers group
+  - team-leads group (fallback)
 ```
+
+---
+
+## Files Created Automatically
+
+### Configuration Files (Root)
+
+| File | Purpose |
+|------|---------|
+| `.gitignore` | Version control exclusions |
+| `.editorconfig` | IDE formatting rules |
+| `.eslintrc.json` | JavaScript/TypeScript linting |
+| `.prettierrc.json` | Code formatting |
+| `sonar-project.properties` | SonarQube configuration |
+| `azure-pipelines.yml` | CI/CD pipeline |
+| `README.md` | Project documentation |
+
+### Azure DevOps Configuration Files
+
+| File | Location | Purpose |
+|------|----------|---------|
+| `CODEOWNERS` | `.azuredevops/` | Code review policy guide |
+| `PULL_REQUEST_TEMPLATE.md` | `.azuredevops/` | PR description template |
+| `TEAM.yml` | `.azuredevops/` | Team definitions |
+| `BRANCH-POLICIES.md` | `.azuredevops/` | Branch policy configuration guide |
+
+### Total: 12 Files Auto-Created
 
 ---
 
@@ -575,29 +516,28 @@ Auto-assigned:
 2. Or use WSL (Windows Subsystem for Linux)
 3. Verify with: `git config core.hooksPath`
 
-### CODEOWNERS Not Assigning Reviewers
+### Reviewers Not Assigned
 
-**Problem:** PRs don't auto-request team reviews
+**Problem:** PRs don't auto-request reviewers
 
-**Cause:** GitHub teams don't exist yet
-
-**Solution:**
-1. Go to: https://github.com/orgs/smartworkz/teams
-2. Create teams: admins, team-leads, senior-developers, code-quality-team, security-team
-3. Add team members
-4. Test with a new PR
-
-### PR Template Not Showing
-
-**Problem:** Template doesn't appear when creating PR
-
-**Cause:** File location or naming incorrect
+**Cause:** Code review policies not configured
 
 **Solution:**
-1. Verify file exists: `.github/PULL_REQUEST_TEMPLATE.md`
-2. Verify exact file name (case-sensitive)
-3. Clear browser cache
-4. Try creating new PR
+1. Create Azure DevOps groups first
+2. Add members to groups
+3. Configure code review policies
+4. Test with new PR
+
+### Can't Merge PR
+
+**Problem:** Merge button disabled
+
+**Causes & Solutions:**
+1. **Need approvals?** → Get required number of approvals
+2. **Status checks failing?** → Fix failures and push
+3. **Comments not resolved?** → Resolve open comments
+4. **Not up to date?** → Click "Update branch"
+5. **Work item not linked?** → Link to Azure Boards item
 
 ### Commit Hook Rejects Valid Message
 
@@ -610,18 +550,6 @@ Auto-assigned:
 - Must have colon and space after scope
 - No extra spaces
 - Example: `feat(generator): add feature` ✅
-
-### Cannot Merge PR
-
-**Problem:** Merge button is disabled
-
-**Cause:** Branch protection rule blocking merge
-
-**Solutions:**
-1. **Need approvals?** - Get required number of approvals
-2. **Status checks failing?** - Fix failures and push new commit
-3. **Conversation not resolved?** - Resolve open conversations
-4. **Not up to date?** - Click "Update branch"
 
 ---
 
@@ -640,94 +568,85 @@ git add .
 git commit -m "feat(scope): description"
 git push -u origin feature/TASK-123-name
 
-# Create PR on GitHub
+# Create PR in Azure DevOps UI
 # Wait for approvals
-# Merge via GitHub UI
+# Merge via Azure DevOps
 
-# Create bug fix
-git checkout -b bugfix/TASK-456-name
-git commit -m "fix(scope): description"
-
-# Hotfix for production
+# Hotfix
 git checkout main
 git pull origin main
 git checkout -b hotfix/TASK-789-name
 git commit -m "fix(scope): critical"
 ```
 
-### Commit Format Quick Check
-
-```
-✅ feat(console): add new feature
-✅ fix(api): handle null exception
-✅ refactor(generator): simplify logic
-✅ docs(readme): update instructions
-
-❌ add feature (missing type/scope)
-❌ Fixed bug (needs lowercase and scope)
-❌ This is too long and exceeds the maximum character limit
-```
-
 ### Team Members File
 
-**Location:** `.github/TEAM.yml`
+**Location:** `.azuredevops/TEAM.yml`
 
 **Update with:**
 ```yaml
-team_leads:
-  - name: "Your Name"
-    email: "your.email@smartworkz.com"
-    github: "your-github-username"
-    role: "Your Role"
+admins:
+  - name: Your Name
+    email: your.email@smartworkz.com
+    aad_username: your.email@smartworkz.com
+    role: Your Role
 ```
+
+### Azure DevOps Navigation
+
+- **Groups:** Project Settings → Security → Groups
+- **Branch Policies:** Repos → Branches → Branch Policies
+- **Code Review Policies:** Project Settings → Repositories → Policies
+- **Pull Requests:** Repos → Pull Requests
+- **Work Items:** Boards → Work Items
 
 ---
 
 ## Summary
 
-### For New Developers
+### For Developers
 
-1. ✅ Create project (run one command)
-2. ✅ Update `.github/TEAM.yml` with team
-3. ✅ Create feature branch
-4. ✅ Make changes
-5. ✅ Commit with proper format (git hook validates)
-6. ✅ Push and create PR
-7. ✅ Reviewers auto-assigned
-8. ✅ Address feedback
-9. ✅ Merge when approved
+1. Create project (one command)
+2. Update `.azuredevops/TEAM.yml`
+3. Create feature branch
+4. Make changes (git hook validates)
+5. Push and create PR
+6. Reviewers auto-assigned
+7. Address feedback
+8. Merge when approved
 
 ### For Admins
 
-1. ✅ Create GitHub teams
-2. ✅ Add team members
-3. ✅ Set branch protection rules
-4. ✅ Verify with test PR
+1. Create Azure DevOps groups
+2. Add team members
+3. Configure branch policies
+4. Configure code review policies
+5. Test with PR
 
 ### For Reviewers
 
-1. ✅ Receive auto-assignment via CODEOWNERS
-2. ✅ Review code against checklist
-3. ✅ Approve or request changes
-4. ✅ Merged automatically when approved
+1. Receive auto-assignment
+2. Review code against checklist
+3. Approve or request changes
+4. Code merged when approved
 
 ---
 
 ## Support
 
 **Questions?**
-- Check "Troubleshooting" section above
-- Review `.github/TEAM.yml` in your project
-- Check `.github/CODEOWNERS` for assignment rules
-- Read `.github/PULL_REQUEST_TEMPLATE.md` format
+- Check the sections above
+- Review `.azuredevops/TEAM.yml`
+- Check `.azuredevops/CODEOWNERS` for assignment rules
+- Read `.azuredevops/PULL_REQUEST_TEMPLATE.md`
 
 **Issues?**
 - Git hooks not working → Check Troubleshooting
-- Reviewers not assigned → Verify GitHub teams exist
-- Can't merge PR → Check branch protection rules
+- Reviewers not assigned → Verify groups and policies exist
+- Can't merge PR → Check branch policies in Azure DevOps
 
 ---
 
-**Version:** 2.0.0  
+**Version:** 2.0.0 - Azure DevOps  
 **Last Updated:** 2026-04-28  
 **For:** All Team Members
