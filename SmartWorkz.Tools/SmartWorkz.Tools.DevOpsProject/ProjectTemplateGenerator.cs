@@ -293,11 +293,12 @@ namespace SmartWorkz.Tools.DevOps
         {
             string repoPath = Path.Combine(_localDevPath, _projectName);
 
-            // Change to repo directory and execute git commands
+            // Execute git commands in repo directory
             var startInfo = new ProcessStartInfo
             {
                 FileName = "cmd.exe",
-                Arguments = $"/c cd {repoPath} && git add . && git commit -m \"Initial commit: SmartWorkz project template\" && git push origin main",
+                Arguments = "/c git add . && git commit -m \"Initial commit: SmartWorkz project template\" && git push origin main",
+                WorkingDirectory = repoPath,
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 CreateNoWindow = true
