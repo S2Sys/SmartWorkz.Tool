@@ -116,16 +116,17 @@ namespace SmartWorkz.Tools.DevOps
                 WriteInfo("  • PR template configured");
                 WriteInfo("  • Team roles defined");
                 WriteInfo("\n⚠️  Manual Next Steps (Admin Only):");
-                WriteInfo("  1. Create GitHub teams: https://github.com/orgs/smartworkz/teams");
-                WriteInfo("     Teams needed: admins, team-leads, senior-developers, code-quality-team, security-team");
-                WriteInfo("  2. Set up GitHub branch protection (main: 2 approvals, develop: 1 approval)");
-                WriteInfo("  3. Add team members to GitHub teams");
-                WriteInfo("  4. Configure service connections");
-                WriteInfo("  5. Set up SonarCloud connection");
+                WriteInfo("  1. Create Azure DevOps groups: Project Settings → Security → Groups");
+                WriteInfo("     Groups needed: admins, team-leads, senior-developers, code-quality-team, security-team");
+                WriteInfo("  2. Add team members to Azure DevOps groups");
+                WriteInfo("  3. Configure branch policies: Repos → Branches → Branch Policies");
+                WriteInfo("     main: 2 approvals required | develop: 1 approval required");
+                WriteInfo("  4. Configure pull request policies: Project Settings → Repositories → Policies");
+                WriteInfo("  5. Set up service connections and pipelines");
                 WriteInfo("\n📖 Documentation:");
-                WriteInfo($"  • Read: {Path.Combine(_localDevPath, _projectName, "COLLABORATION.md")}");
-                WriteInfo($"  • Read: {Path.Combine(_localDevPath, _projectName, ".github", "SETUP.md")}");
-                WriteInfo($"  • Review: {Path.Combine(_localDevPath, _projectName, ".github", "TEAM.yml")}");
+                WriteInfo($"  • Read: {Path.Combine(_localDevPath, _projectName, "TEAM-GUIDE.md")}");
+                WriteInfo($"  • Reference: {Path.Combine(_localDevPath, _projectName, ".azuredevops", "BRANCH-POLICIES.md")}");
+                WriteInfo($"  • Review: {Path.Combine(_localDevPath, _projectName, ".azuredevops", "TEAM.yml")}");
                 WriteInfo($"\nProject URL: {_organizationUrl}/{_projectName}");
                 WriteInfo($"Repository: {_organizationUrl}/{_projectName}/_git/{_projectName}");
             }
@@ -400,10 +401,10 @@ namespace SmartWorkz.Tools.DevOps
         private void CreateCodeOwnersFile()
         {
             string repoPath = Path.Combine(_localDevPath, _projectName);
-            string gitHubDir = Path.Combine(repoPath, ".github");
-            Directory.CreateDirectory(gitHubDir);
+            string azureDevOpsDir = Path.Combine(repoPath, ".azuredevops");
+            Directory.CreateDirectory(azureDevOpsDir);
 
-            string codeOwnersPath = Path.Combine(gitHubDir, "CODEOWNERS");
+            string codeOwnersPath = Path.Combine(azureDevOpsDir, "CODEOWNERS");
             File.WriteAllText(codeOwnersPath, GetCodeOwnersContent());
         }
 
@@ -413,10 +414,10 @@ namespace SmartWorkz.Tools.DevOps
         private void CreatePullRequestTemplate()
         {
             string repoPath = Path.Combine(_localDevPath, _projectName);
-            string gitHubDir = Path.Combine(repoPath, ".github");
-            Directory.CreateDirectory(gitHubDir);
+            string azureDevOpsDir = Path.Combine(repoPath, ".azuredevops");
+            Directory.CreateDirectory(azureDevOpsDir);
 
-            string prTemplatePath = Path.Combine(gitHubDir, "PULL_REQUEST_TEMPLATE.md");
+            string prTemplatePath = Path.Combine(azureDevOpsDir, "PULL_REQUEST_TEMPLATE.md");
             File.WriteAllText(prTemplatePath, GetPullRequestTemplateContent());
         }
 
@@ -426,10 +427,10 @@ namespace SmartWorkz.Tools.DevOps
         private void CreateTeamConfigFile()
         {
             string repoPath = Path.Combine(_localDevPath, _projectName);
-            string gitHubDir = Path.Combine(repoPath, ".github");
-            Directory.CreateDirectory(gitHubDir);
+            string azureDevOpsDir = Path.Combine(repoPath, ".azuredevops");
+            Directory.CreateDirectory(azureDevOpsDir);
 
-            string teamFilePath = Path.Combine(gitHubDir, "TEAM.yml");
+            string teamFilePath = Path.Combine(azureDevOpsDir, "TEAM.yml");
             File.WriteAllText(teamFilePath, GetTeamConfigContent());
         }
 
@@ -808,34 +809,47 @@ fi
 
 exit 0";
 
-        private string GetCodeOwnersContent() => @"# SmartWorkz.Tools CODEOWNERS
-# Automatically request code review from appropriate teams
+        private string GetCodeOwnersContent() => @"# Azure DevOps Code Review Policies
+# Configure automatic reviewer assignment in:
+# Project Settings → Repositories → [Repo Name] → Policies
 
-# Default: Team leads review everything
-* @smartworkz/team-leads
+## Configure These Code Review Policies:
 
-# Senior developers review complex code
-SmartWorkz.Tools.DevOpsProject/ @smartworkz/senior-developers
-ProjectTemplateGenerator.cs @smartworkz/senior-developers
+### 1. Senior Developers Review Complex Code
+Path Pattern: SmartWorkz.Tools.DevOpsProject/
+Path Pattern: ProjectTemplateGenerator.cs
+Reviewers: senior-developers (group)
+Minimum Reviewers: 1
 
-# Code quality team reviews configuration and structure
-.editorconfig @smartworkz/code-quality-team
-.eslintrc.json @smartworkz/code-quality-team
-.prettierrc.json @smartworkz/code-quality-team
-azure-pipelines.yml @smartworkz/code-quality-team
-sonar-project.properties @smartworkz/code-quality-team
+### 2. Code Quality Team Reviews Configuration
+Path Pattern: .editorconfig
+Path Pattern: .eslintrc.json
+Path Pattern: .prettierrc.json
+Path Pattern: azure-pipelines.yml
+Path Pattern: sonar-project.properties
+Reviewers: code-quality-team (group)
+Minimum Reviewers: 1
 
-# Security team reviews authentication and secrets
-**/token* @smartworkz/security-team
-**/auth* @smartworkz/security-team
-**/secret* @smartworkz/security-team
-**/credential* @smartworkz/security-team
+### 3. Security Team Reviews Sensitive Code
+Path Pattern: **/token**
+Path Pattern: **/auth/**
+Path Pattern: **/secret/**
+Path Pattern: **/credential/**
+Reviewers: security-team (group)
+Minimum Reviewers: 1
 
-# Documentation review
-*.md @smartworkz/team-leads
-COLLABORATION.md @smartworkz/team-leads
-INITIALIZATION.md @smartworkz/team-leads
-CLAUDE.md @smartworkz/team-leads";
+### 4. Team Leads Review Everything (Default)
+Path Pattern: **
+Reviewers: team-leads (group)
+Minimum Reviewers: 1 (or 2 for main branch)
+
+## Setup Instructions in Azure DevOps UI:
+1. Go to: Project Settings → Repositories → [Your Repo] → Policies
+2. Click: Add Policy → Code Review
+3. Configure each pattern above
+4. Assign groups as reviewers
+5. Set minimum reviewers count
+6. Enable the policy";
 
         private string GetPullRequestTemplateContent() => @"## Description
 Briefly describe the changes in this PR.
@@ -871,70 +885,81 @@ Describe how you tested these changes.
 ## Review Notes
 Any special guidance for reviewers?";
 
-        private string GetTeamConfigContent() => @"# SmartWorkz.Tools Team Configuration
-#
+        private string GetTeamConfigContent() => @"# SmartWorkz.Tools Team Configuration (Azure DevOps)
 # This file defines team members and their roles.
-# Update this file when team members are added or removed.
+# Create corresponding groups in Azure DevOps and add these members.
 
-## Administrators
-# Full access, security rules, branch protection
+## ADMINS
+# Full access, security rules, branch policies, project management
 admins:
-  - name: ""Tech Lead""
-    email: ""tech.lead@smartworkz.com""
-    github: ""tech-lead-username""
-    role: ""Lead Developer""
+  - name: Tech Lead
+    email: tech.lead@smartworkz.com
+    aad_username: tech.lead@smartworkz.com
+    role: Lead Developer
 
-## Team Leads
-# Approve critical changes to main branch
+## TEAM-LEADS
+# Approve PRs to main (2 required), approve PRs to develop (1 needed)
 team_leads:
-  - name: ""Senior Developer 1""
-    email: ""senior1@smartworkz.com""
-    github: ""senior1-username""
-    role: ""Senior Developer""
+  - name: Senior Developer 1
+    email: senior1@smartworkz.com
+    aad_username: senior1@smartworkz.com
+    role: Senior Developer
 
-  - name: ""Senior Developer 2""
-    email: ""senior2@smartworkz.com""
-    github: ""senior2-username""
-    role: ""Architect""
+  - name: Senior Developer 2
+    email: senior2@smartworkz.com
+    aad_username: senior2@smartworkz.com
+    role: Architect
 
-## Senior Developers
-# Review complex code
+## SENIOR-DEVELOPERS
+# Review complex code, validate implementations
 senior_developers:
-  - name: ""Mid-level Developer 1""
-    email: ""mid1@smartworkz.com""
-    github: ""mid1-username""
-    role: ""Developer""
+  - name: Mid-level Developer 1
+    email: mid1@smartworkz.com
+    aad_username: mid1@smartworkz.com
+    role: Developer
 
-  - name: ""Mid-level Developer 2""
-    email: ""mid2@smartworkz.com""
-    github: ""mid2-username""
-    role: ""Developer""
+  - name: Mid-level Developer 2
+    email: mid2@smartworkz.com
+    aad_username: mid2@smartworkz.com
+    role: Developer
 
-## Code Quality Team
-# Review configuration and architecture
+## CODE-QUALITY-TEAM
+# Review configuration files, validate structure
 code_quality_team:
-  - name: ""Code Quality Lead""
-    email: ""qa.lead@smartworkz.com""
-    github: ""qa-lead-username""
-    role: ""QA Lead""
+  - name: Code Quality Lead
+    email: qa.lead@smartworkz.com
+    aad_username: qa.lead@smartworkz.com
+    role: QA Lead
 
-## Security Team
-# Review security-related code
+## SECURITY-TEAM
+# Review authentication, tokens, secrets
 security_team:
-  - name: ""Security Specialist""
-    email: ""security@smartworkz.com""
-    github: ""security-username""
-    role: ""Security Engineer""
+  - name: Security Specialist
+    email: security@smartworkz.com
+    aad_username: security@smartworkz.com
+    role: Security Engineer
 
-## Configuration
-repository: ""smartworkz/{_projectName}""
-branch_protection:
+## AZURE DEVOPS CONFIGURATION
+organization: smartworkz
+project: SmartWorkz
+repository: SmartWorkz
+
+## BRANCH POLICIES
+branch_policies:
   main:
     required_approvals: 2
-    enforce_admins: true
+    reset_on_new_changes: true
+    require_status_checks: true
   develop:
     required_approvals: 1
-    enforce_admins: false";
+    reset_on_new_changes: true
+    require_status_checks: true
+
+## SETUP INSTRUCTIONS
+# 1. Create groups in: Project Settings → Security → Groups
+# 2. Add members to each group
+# 3. Configure branch policies: Repos → Branches → Branch Policies
+# 4. Configure code review policies: Project Settings → Repositories → Policies";
 
         #endregion
 
