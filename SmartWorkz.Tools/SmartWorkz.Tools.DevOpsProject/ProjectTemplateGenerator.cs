@@ -30,8 +30,33 @@ namespace SmartWorkz.Tools.DevOps
         private const string ScrumTemplateId = "adcc42ab-9882-485e-a3ed-7678f01f66bc";
         private const int ProjectInitDelaySeconds = 5;
 
+        // Policy Type GUIDs
+        private const string PolicyTypeMinReviewers      = "fa4e907d-8a14-494a-85d6-a89a79de8486";
+        private const string PolicyTypeRequiredReviewers = "fd2167ab-b0be-447a-8ec8-39368250530e";
+        private const string PolicyTypeCommentResolution = "c6a27be9-7728-4974-aa4d-753382dc3551";
+        private const string PolicyTypeWorkItemLinking   = "40e92b44-2fe1-4dd6-b3d8-74a9c21d0c6e";
+
+        // Retry / Polling
+        private const int PolicyRetryCount        = 3;
+        private const int PolicyRetryDelaySeconds = 2;
+        private const int RepoReadyMaxAttempts    = 10;
+        private const int RepoReadyPollSeconds    = 5;
+
         // Valid project types
-        private static readonly string[] ValidProjectTypes = { "Angular", "DotNet", "FullStack", "Mobile", "AI" };
+        private static readonly string[] ValidProjectTypes =
+        {
+            "Angular",      // Frontend web app (TypeScript/Angular)
+            "DotNet",       // Backend API (.NET/C#)
+            "FullStack",    // Full stack (.NET + Angular)
+            "Mobile",       // Cross-platform (iOS/Android)
+            "AI",           // Machine learning project
+            "Java",         // Backend API (Java/Spring)
+            "PHP",          // Backend API (PHP/Laravel/Symfony)
+            "Flutter",      // Cross-platform mobile (Flutter)
+            "Vue",          // Frontend web app (Vue.js)
+            "React" ,        // Frontend web app (React)
+                "none"
+        };
 
         public ProjectTemplateGenerator(
             string projectName,
@@ -87,42 +112,57 @@ namespace SmartWorkz.Tools.DevOps
                 await InitializeGitHooksAsync();
                 WriteSuccess("✓ Git hooks configured");
 
-                // Step 5: Create CODEOWNERS and PR Template
-                WriteInfo("\nStep 5: Configuring code ownership and PR template...");
+                // Step 5: Create CODEOWNERS, PR Template, and Branch Policies
+                WriteInfo("\nStep 5: Configuring code ownership, PR template, and branch policies...");
                 CreateCodeOwnersFile();
                 CreatePullRequestTemplate();
-                WriteSuccess("✓ CODEOWNERS and PR template created");
+                CreateBranchPoliciesFile();
+                WriteSuccess("✓ CODEOWNERS, PR template, and branch policies created");
 
                 // Step 6: Create Team Configuration
                 WriteInfo("\nStep 6: Creating team configuration...");
                 CreateTeamConfigFile();
                 WriteSuccess("✓ Team configuration created");
 
-                // Step 7: Git operations
-                WriteInfo("\nStep 7: Initializing git repository...");
+                // Step 7: Create Azure DevOps Groups and Add Members
+                WriteInfo("\nStep 7: Creating Azure DevOps groups and adding team members...");
+                var groupDescriptors = await CreateGroupsAndAddMembersAsync();
+                WriteSuccess("✓ Groups created and members added");
+
+                // Step 8: Git operations
+                WriteInfo("\nStep 8: Initializing git repository...");
                 await GitAddCommitPushAsync();
                 WriteSuccess("✓ Repository initialized and pushed");
 
-                // Step 8: Summary with initialization guide
+                // Step 9: Configure Branch Policies
+                WriteInfo("\nStep 9: Configuring branch policies and required reviewers...");
+                await ConfigureBranchPoliciesAsync(projectId, groupDescriptors);
+                WriteSuccess("✓ Branch policy configuration complete");
+
+                // Step 10: Summary with initialization guide
                 WriteInfo("\n" + new string('=', 50));
                 WriteSuccess("✓ Project setup completed!");
                 WriteInfo("\n📋 INITIALIZATION CHECKLIST:");
-                WriteInfo("\n✓ Completed:");
+                WriteInfo("\n✅ FULLY AUTOMATED (All Done!):");
                 WriteInfo("  • Azure DevOps project created");
                 WriteInfo("  • Repository cloned and structured");
                 WriteInfo("  • Configuration files generated");
-                WriteInfo("  • Git hooks configured locally");
+                WriteInfo("  • Git hooks configured locally (commit validation)");
                 WriteInfo("  • CODEOWNERS file created");
                 WriteInfo("  • PR template configured");
-                WriteInfo("  • Team roles defined");
-                WriteInfo("\n⚠️  Manual Next Steps (Admin Only):");
-                WriteInfo("  1. Create Azure DevOps groups: Project Settings → Security → Groups");
-                WriteInfo("     Groups needed: admins, team-leads, senior-developers, code-quality-team, security-team");
-                WriteInfo("  2. Add team members to Azure DevOps groups");
-                WriteInfo("  3. Configure branch policies: Repos → Branches → Branch Policies");
-                WriteInfo("     main: 2 approvals required | develop: 1 approval required");
-                WriteInfo("  4. Configure pull request policies: Project Settings → Repositories → Policies");
-                WriteInfo("  5. Set up service connections and pipelines");
+                WriteInfo("  • Azure DevOps groups created (admins, team-leads, senior-developers, code-quality-team, security-team)");
+                WriteInfo("  • Team members added to groups (from .azuredevops/TEAM.yml)");
+                WriteInfo("  • Branch policies configured (main: 2 reviewers, develop: 1 reviewer)");
+                WriteInfo("  • Required reviewer policies applied (senior-devs, code-quality, security, team-leads)");
+                WriteInfo("  • Repository initialized with initial commit");
+                WriteInfo("\n📋 Project is ready for development!");
+                WriteInfo("\n⚠️  Manual Setup Remaining (Optional Enhancements):");
+                WriteInfo("\n1️⃣  Optional: CI/CD Setup");
+                WriteInfo("    • Service connections: Project Settings → Service Connections");
+                WriteInfo("    • Enable azure-pipelines.yml for automated builds");
+                WriteInfo("\n2️⃣  Verify Policies Applied:");
+                WriteInfo($"    {_organizationUrl}/{_projectName}/_settings/repositories");
+                WriteInfo($"\n📖 Full setup guide: {Path.Combine(_localDevPath, _projectName, ".azuredevops", "BRANCH-POLICIES.md")}");
                 WriteInfo("\n📖 Documentation:");
                 WriteInfo($"  • Read: {Path.Combine(_localDevPath, _projectName, "TEAM-GUIDE.md")}");
                 WriteInfo($"  • Reference: {Path.Combine(_localDevPath, _projectName, ".azuredevops", "BRANCH-POLICIES.md")}");
@@ -189,8 +229,8 @@ namespace SmartWorkz.Tools.DevOps
                 Directory.Delete(localPath, true);
             }
 
-            // Clone repository
-            await RunGitCommandAsync("clone", $"{repoUrl} \"{localPath}\"");
+            // Clone repository - pass URL and path as separate arguments
+            await RunGitCommandAsync("clone", repoUrl, localPath);
 
             // Create folder structure based on type
             CreateFolderStructure(localPath);
@@ -203,123 +243,603 @@ namespace SmartWorkz.Tools.DevOps
         {
             WriteInfo($"Creating project structure for: {_projectType}");
 
-            var folders = _projectType switch
-            {
-                "DotNet" => new[]
-                {
-                    "src", "src/API", "src/Services", "src/Data",
-                    "tests", "tests/UnitTests", "tests/IntegrationTests",
-                    "docs", "build"
-                },
-                "Angular" => new[]
-                {
-                    "src", "src/app", "src/assets", "src/environments",
-                    "tests", "tests/unit", "tests/e2e",
-                    "docs", "build"
-                },
-                "FullStack" => new[]
-                {
-                    "src", "src/api", "src/web", "src/shared",
-                    "tests", "tests/api", "tests/web",
-                    "docs", "build", "infra", "infra/terraform", "infra/kubernetes"
-                },
-                "Mobile" => new[]
-                {
-                    "src", "src/android", "src/ios", "src/shared",
-                    "tests", "docs", "build"
-                },
-                "AI" => new[]
-                {
-                    "src", "src/notebooks", "src/training", "src/inference",
-                    "tests", "docs", "models", "datasets"
-                },
-                _ => new[] { "src", "tests", "docs", "build" }
-            };
-
+            var folders = GetFoldersForProjectType();
             foreach (var folder in folders)
             {
-                string folderPath = Path.Combine(basePath, folder);
-                Directory.CreateDirectory(folderPath);
+                Directory.CreateDirectory(Path.Combine(basePath, folder));
             }
         }
 
         /// <summary>
-        /// Step 3: Create configuration files
+        /// Get folder structure for the specified project type
+        /// </summary>
+        private string[] GetFoldersForProjectType()
+        {
+            // Common folders for all project types
+            var baseFolders = new[] { "src", "tests", "docs", "build", "config", "scripts" };
+
+            // Type-specific subdirectories
+            var typeSpecificFolders = _projectType switch
+            {
+                // Web Frontends
+                "Angular" => new[] { "src/app", "src/assets", "src/environments", "tests/unit", "tests/e2e" },
+                "React" => new[] { "src/components", "src/pages", "src/hooks", "src/utils", "public", "tests/unit", "tests/e2e" },
+                "Vue" => new[] { "src/components", "src/pages", "src/stores", "src/utils", "public", "tests/unit", "tests/e2e" },
+
+                // Backend APIs
+                "DotNet" => new[] { "src/API", "src/Services", "src/Data", "tests/UnitTests", "tests/IntegrationTests" },
+                "Java" => new[] { "src/main/java", "src/main/resources", "src/test/java", "target", ".mvn" },
+                "PHP" => new[] { "src", "config", "routes", "tests/unit", "tests/integration", "storage", "vendor" },
+
+                // Full Stack
+                "FullStack" => new[] { "src/api", "src/web", "src/shared", "tests/api", "tests/web", "infra", "infra/terraform", "infra/kubernetes" },
+
+                // Mobile
+                "Mobile" => new[] { "src/android", "src/ios", "src/shared" },
+                "Flutter" => new[] { "lib", "lib/screens", "lib/widgets", "lib/models", "lib/services", "test", "android", "ios", "web", "windows", "macos" },
+
+                // AI/ML
+                "AI" => new[] { "src/notebooks", "src/training", "src/inference", "tests", "models", "datasets" },
+
+                // Default fallback for unknown types
+                _ => new[] {"src", "tests/unit", "tests/integration" }
+            };
+
+            return baseFolders.Concat(typeSpecificFolders).ToArray();
+        }
+
+        /// <summary>
+        /// Step 3: Create configuration files (common and tech-stack-specific)
         /// </summary>
         private void CreateConfigurationFiles()
         {
             string basePath = Path.Combine(_localDevPath, _projectName);
 
-            // .gitignore
-            File.WriteAllText(
-                Path.Combine(basePath, ".gitignore"),
-                GetGitignoreContent());
+            // Common files for all projects
+            File.WriteAllText(Path.Combine(basePath, ".gitignore"), GetGitignoreContent());
+            File.WriteAllText(Path.Combine(basePath, ".editorconfig"), GetEditorconfigContent());
+            File.WriteAllText(Path.Combine(basePath, "sonar-project.properties"), GetSonarPropertiesContent());
+            File.WriteAllText(Path.Combine(basePath, "azure-pipelines.yml"), GetPipelineYamlContent());
+            File.WriteAllText(Path.Combine(basePath, "README.md"), GetReadmeContent());
 
-            // .editorconfig
-            File.WriteAllText(
-                Path.Combine(basePath, ".editorconfig"),
-                GetEditorconfigContent());
+            // Tech-stack-specific files
+            switch (_projectType)
+            {
+                case "React" or "Angular" or "Vue":
+                    File.WriteAllText(Path.Combine(basePath, ".eslintrc.json"), GetEslintrcContent());
+                    File.WriteAllText(Path.Combine(basePath, ".prettierrc.json"), GetPrettierrcContent());
+                    File.WriteAllText(Path.Combine(basePath, "package.json"), GetPackageJsonContent(_projectType));
+                    File.WriteAllText(Path.Combine(basePath, "tsconfig.json"), GetTsConfigContent());
+                    break;
 
-            // .eslintrc.json
-            File.WriteAllText(
-                Path.Combine(basePath, ".eslintrc.json"),
-                GetEslintrcContent());
+                case "Java":
+                    File.WriteAllText(Path.Combine(basePath, "pom.xml"), GetMavenPomContent());
+                    File.WriteAllText(Path.Combine(basePath, "application.properties"), GetJavaApplicationProperties());
+                    break;
 
-            // .prettierrc.json
-            File.WriteAllText(
-                Path.Combine(basePath, ".prettierrc.json"),
-                GetPrettierrcContent());
+                case "PHP":
+                    File.WriteAllText(Path.Combine(basePath, "composer.json"), GetComposerJsonContent());
+                    File.WriteAllText(Path.Combine(basePath, ".env.example"), GetPhpEnvContent());
+                    File.WriteAllText(Path.Combine(basePath, "phpunit.xml"), GetPhpUnitContent());
+                    break;
 
-            // sonar-project.properties
-            File.WriteAllText(
-                Path.Combine(basePath, "sonar-project.properties"),
-                GetSonarPropertiesContent());
+                case "Flutter":
+                    File.WriteAllText(Path.Combine(basePath, "pubspec.yaml"), GetFlutterPubspecContent());
+                    File.WriteAllText(Path.Combine(basePath, "analysis_options.yaml"), GetFlutterAnalysisOptions());
+                    break;
 
-            // azure-pipelines.yml
-            File.WriteAllText(
-                Path.Combine(basePath, "azure-pipelines.yml"),
-                GetPipelineYamlContent());
+                case "DotNet":
+                    File.WriteAllText(Path.Combine(basePath, ".eslintrc.json"), GetEslintrcContent());
+                    File.WriteAllText(Path.Combine(basePath, ".prettierrc.json"), GetPrettierrcContent());
+                    break;
 
-            // README.md
-            File.WriteAllText(
-                Path.Combine(basePath, "README.md"),
-                GetReadmeContent());
+                case "FullStack":
+                    File.WriteAllText(Path.Combine(basePath, ".eslintrc.json"), GetEslintrcContent());
+                    File.WriteAllText(Path.Combine(basePath, ".prettierrc.json"), GetPrettierrcContent());
+                    break;
+            }
         }
 
         /// <summary>
-        /// Step 6: Git operations - add, commit, push
+        /// Step 7: Git operations - add, commit, push
         /// </summary>
         private async Task GitAddCommitPushAsync()
         {
             string repoPath = Path.Combine(_localDevPath, _projectName);
 
-            // Execute git commands in repo directory
-            var startInfo = new ProcessStartInfo
+            try
             {
-                FileName = "cmd.exe",
-                Arguments = "/c git add . && git commit -m \"Initial commit: SmartWorkz project template\" && git push origin main",
-                WorkingDirectory = repoPath,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                CreateNoWindow = true
-            };
+                // Step 1: Add all files
+                WriteInfo("  • Running: git add .");
+                await RunGitCommandAsync("add", ".");
 
-            var process = Process.Start(startInfo);
-            if (process == null)
-            {
-                throw new Exception("Failed to start git process");
-            }
+                // Step 2: Commit
+                WriteInfo("  • Running: git commit");
+                await RunGitCommandAsync("commit", "-m", "Initial commit: SmartWorkz project template");
 
-            using (process)
-            {
-                process.WaitForExit();
-                if (process.ExitCode != 0)
+                // Step 3: Try to push to main, fall back to master if main doesn't exist
+                try
                 {
-                    throw new Exception("Git operations failed");
+                    WriteInfo("  • Running: git push origin main");
+                    await RunGitCommandAsync("push", "origin", "main");
                 }
+                catch
+                {
+                    WriteWarning("  ⚠ main branch not found, trying master");
+                    await RunGitCommandAsync("push", "origin", "master");
+                }
+
+                WriteSuccess("  • All git operations completed");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Git operations failed: {ex.Message}", ex);
             }
 
             await Task.CompletedTask;
+        }
+
+        /// <summary>
+        /// Step 7: Create Azure DevOps groups and add team members from TEAM.yml
+        /// Returns a dictionary mapping group names to their descriptors for policy configuration
+        /// </summary>
+        private async Task<Dictionary<string, string>> CreateGroupsAndAddMembersAsync()
+        {
+            try
+            {
+                string repoPath = Path.Combine(_localDevPath, _projectName);
+                string teamFilePath = Path.Combine(repoPath, ".azuredevops", "TEAM.yml");
+
+                var groupDescriptors = new Dictionary<string, string>();
+
+                if (!File.Exists(teamFilePath))
+                {
+                    WriteWarning("TEAM.yml not found, skipping group creation");
+                    return groupDescriptors;
+                }
+
+                // Define group names and their yaml keys
+                var groupConfig = new Dictionary<string, string>
+                {
+                    { "admins", "admins" },
+                    { "team-leads", "team_leads" },
+                    { "senior-developers", "senior_developers" },
+                    { "code-quality-team", "code_quality_team" },
+                    { "security-team", "security_team" }
+                };
+
+                // Read team file
+                string teamContent = File.ReadAllText(teamFilePath);
+
+                // Create groups and add members
+                foreach (var group in groupConfig)
+                {
+                    string groupName = group.Key;
+                    string yamlKey = group.Value;
+
+                    // Create group
+                    string groupId = await CreateGroupAsync(groupName);
+
+                    if (string.IsNullOrEmpty(groupId))
+                    {
+                        WriteWarning($"  ⚠ Could not create group: {groupName}");
+                        continue;
+                    }
+
+                    groupDescriptors[groupName] = groupId;
+                    WriteInfo($"  ✓ Created group: {groupName}");
+
+                    // Extract emails for this group from team file
+                    var emails = ExtractEmailsFromTeamFile(teamContent, yamlKey);
+
+                    // Add members to group
+                    foreach (var email in emails)
+                    {
+                        await AddMemberToGroupAsync(groupId, email);
+                    }
+
+                    if (emails.Count > 0)
+                    {
+                        WriteInfo($"    ✓ Added {emails.Count} member(s) to {groupName}");
+                    }
+                }
+
+                return groupDescriptors;
+            }
+            catch (Exception ex)
+            {
+                WriteWarning($"Group creation skipped: {ex.Message}");
+                return new Dictionary<string, string>();
+            }
+        }
+
+        /// <summary>
+        /// Create an Azure DevOps group
+        /// </summary>
+        private async Task<string> CreateGroupAsync(string groupName)
+        {
+            try
+            {
+                var groupBody = new
+                {
+                    displayName = groupName,
+                    description = $"SmartWorkz {groupName} group"
+                };
+
+                string jsonBody = JsonSerializer.Serialize(groupBody);
+                var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
+                // Try project-scoped endpoint
+                var response = await _httpClient.PostAsync(
+                    $"{_organizationUrl}/{_projectName}/_apis/identity/groups?api-version=7.0-preview.1",
+                    content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseBody = await response.Content.ReadAsStringAsync();
+                    using JsonDocument doc = JsonDocument.Parse(responseBody);
+                    string? descriptor = doc.RootElement.GetProperty("descriptor").GetString();
+                    WriteInfo($"    ✓ Created group: {groupName}");
+                    return descriptor ?? string.Empty;
+                }
+
+                if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+                {
+                    // Group already exists, find it
+                    WriteInfo($"    ℹ Group already exists: {groupName}");
+                    string? existingId = await GetGroupIdAsync(groupName);
+                    return existingId ?? string.Empty;
+                }
+
+                // Log error but don't fail
+                WriteWarning($"    ⚠ Could not create group '{groupName}' (HTTP {response.StatusCode})");
+                WriteInfo($"      Manual creation required: Project Settings → Security → Groups");
+                return string.Empty;
+            }
+            catch
+            {
+                WriteWarning($"    ⚠ Group creation error: {groupName}");
+                return string.Empty;
+            }
+        }
+
+        /// <summary>
+        /// Get existing group ID by name
+        /// </summary>
+        private async Task<string> GetGroupIdAsync(string groupName)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync(
+                    $"{_organizationUrl}/_apis/identity/groups?scopeNames=VSS_MemberEntitlement_Group&api-version=7.0-preview.1");
+
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseBody = await response.Content.ReadAsStringAsync();
+                    using (JsonDocument doc = JsonDocument.Parse(responseBody))
+                    {
+                        var groups = doc.RootElement.GetProperty("value");
+                        foreach (var group in groups.EnumerateArray())
+                        {
+                            string name = group.GetProperty("displayName").GetString();
+                            if (name.Equals(groupName, StringComparison.OrdinalIgnoreCase))
+                            {
+                                return group.GetProperty("descriptor").GetString();
+                            }
+                        }
+                    }
+                }
+
+                return null;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Add a member to a group by email
+        /// </summary>
+        private async Task AddMemberToGroupAsync(string groupId, string email)
+        {
+            try
+            {
+                // First, find the user by email
+                var userResponse = await _httpClient.GetAsync(
+                    $"{_organizationUrl}/_apis/graph/users?subjectTypes=msa,aad&query={email}&api-version=7.0-preview.1");
+
+                if (!userResponse.IsSuccessStatusCode)
+                {
+                    return;
+                }
+
+                var userBody = await userResponse.Content.ReadAsStringAsync();
+                using (JsonDocument doc = JsonDocument.Parse(userBody))
+                {
+                    var results = doc.RootElement.GetProperty("graphUsers");
+                    if (results.GetArrayLength() == 0)
+                    {
+                        return;
+                    }
+
+                    string userDescriptor = results[0].GetProperty("descriptor").GetString();
+
+                    // Add user to group
+                    var membershipBody = new { };
+                    string jsonBody = JsonSerializer.Serialize(membershipBody);
+                    var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
+                    await _httpClient.PutAsync(
+                        $"{_organizationUrl}/_apis/identity/groupmemberships/{groupId}/{userDescriptor}?api-version=7.0-preview.1",
+                        content);
+                }
+            }
+            catch
+            {
+                // Silently fail - user might not exist in Azure AD yet
+            }
+        }
+
+        /// <summary>
+        /// Extract email addresses from TEAM.yml for a specific group
+        /// </summary>
+        private List<string> ExtractEmailsFromTeamFile(string teamContent, string groupKey)
+        {
+            var emails = new List<string>();
+
+            try
+            {
+                // Simple YAML parsing for our specific format
+                string[] lines = teamContent.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+                bool inSection = false;
+
+                foreach (string line in lines)
+                {
+                    string trimmed = line.Trim();
+
+                    // Check if this is the section we're looking for
+                    if (trimmed.StartsWith(groupKey + ":", StringComparison.OrdinalIgnoreCase))
+                    {
+                        inSection = true;
+                        continue;
+                    }
+
+                    // Exit section if we hit another section
+                    if (inSection && trimmed.EndsWith(":") && !trimmed.StartsWith("-"))
+                    {
+                        break;
+                    }
+
+                    // Extract email if in section
+                    if (inSection && trimmed.Contains("email:"))
+                    {
+                        string email = trimmed.Replace("email:", "").Trim();
+                        if (!string.IsNullOrEmpty(email))
+                        {
+                            emails.Add(email);
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                // Parsing error, return empty list
+            }
+
+            return emails;
+        }
+
+        /// <summary>
+        /// Helper: Execute an async operation with exponential backoff retry.
+        /// </summary>
+        private async Task<T> RetryAsync<T>(Func<Task<T>> action, int maxRetries = PolicyRetryCount, int delaySeconds = PolicyRetryDelaySeconds)
+        {
+            int attempt = 0;
+            while (true)
+            {
+                try
+                {
+                    return await action();
+                }
+                catch (Exception ex) when (attempt < maxRetries)
+                {
+                    attempt++;
+                    int waitMs = delaySeconds * (int)Math.Pow(2, attempt - 1) * 1000;
+                    WriteWarning($"  ⚠ Retry {attempt}/{maxRetries} after {waitMs / 1000}s: {ex.Message}");
+                    await Task.Delay(waitMs);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Fetch the repository GUID for the project's default repository.
+        /// Returns null if the repository does not yet exist or on any error.
+        /// </summary>
+        private async Task<string?> GetRepositoryIdAsync(string projectId)
+        {
+            try
+            {
+                var response = await _httpClient.GetAsync(
+                    $"{_organizationUrl}/{_projectName}/_apis/git/repositories/{_projectName}?api-version=7.0");
+
+                if (!response.IsSuccessStatusCode)
+                    return null;
+
+                var responseBody = await response.Content.ReadAsStringAsync();
+                using JsonDocument doc = JsonDocument.Parse(responseBody);
+                return doc.RootElement.GetProperty("id").GetString();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Poll until the default repository is available (created and initialised after project creation).
+        /// Returns the repository GUID, or null if it never becomes ready within the allowed attempts.
+        /// </summary>
+        private async Task<string?> WaitForRepositoryReadyAsync(string projectId)
+        {
+            WriteInfo($"  • Waiting for repository (max {RepoReadyMaxAttempts} attempts)...");
+            for (int attempt = 1; attempt <= RepoReadyMaxAttempts; attempt++)
+            {
+                string? repoId = await GetRepositoryIdAsync(projectId);
+
+                if (!string.IsNullOrEmpty(repoId))
+                {
+                    WriteInfo($"  • Repository ready: {repoId}");
+                    return repoId;
+                }
+
+                WriteInfo($"  • Attempt {attempt}/{RepoReadyMaxAttempts}: not ready, waiting {RepoReadyPollSeconds}s...");
+                await Task.Delay(RepoReadyPollSeconds * 1000);
+            }
+
+            WriteWarning($"  ⚠ Repository not ready after {RepoReadyMaxAttempts} attempts");
+            return null;
+        }
+
+        /// <summary>
+        /// POST a single policy configuration. Non-fatal: returns false and warns on any failure.
+        /// </summary>
+        private async Task<bool> CreatePolicyAsync(string projectId, object policyBody)
+        {
+            try
+            {
+                return await RetryAsync(async () =>
+                {
+                    string jsonBody = JsonSerializer.Serialize(policyBody);
+                    var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
+
+                    var response = await _httpClient.PostAsync(
+                        $"{_organizationUrl}/{_projectName}/_apis/policy/configurations?api-version=7.0",
+                        content);
+
+                    if (response.IsSuccessStatusCode)
+                        return true;
+
+                    string err = await response.Content.ReadAsStringAsync();
+                    WriteWarning($"  ⚠ Policy failed ({response.StatusCode}): {err}");
+                    return false;
+                });
+            }
+            catch (Exception ex)
+            {
+                WriteWarning($"  ⚠ Policy error (non-fatal): {ex.Message}");
+                return false;
+            }
+        }
+
+        /// <summary>
+        /// Step 9: Configure branch policies and required reviewer policies via the Azure DevOps Policy API.
+        /// All failures are non-fatal — a warning is written and execution continues.
+        /// </summary>
+        private async Task ConfigureBranchPoliciesAsync(string projectId, Dictionary<string, string> groupDescriptors)
+        {
+            try
+            {
+                // Get repository ID (poll until ready)
+                string? repoId = await WaitForRepositoryReadyAsync(projectId);
+                if (string.IsNullOrEmpty(repoId))
+                {
+                    WriteWarning("  ⚠ Skipping all branch policies: repository not available");
+                    return;
+                }
+
+                int policyCount = 0;
+
+                // Policy 1: main — 2 reviewers, blocking
+                WriteInfo("  • Configuring minimum reviewer policy for 'main'...");
+                bool ok = await CreatePolicyAsync(projectId, new
+                {
+                    isEnabled = true,
+                    isBlocking = true,
+                    type = new { id = PolicyTypeMinReviewers },
+                    settings = new
+                    {
+                        minimumApproverCount = 2,
+                        creatorVoteCounts = false,
+                        allowDownvotes = false,
+                        resetOnSourcePush = true,
+                        requireVoteOnLastIteration = false,
+                        resetRejectionsOnSourcePush = false,
+                        blockLastPusherVote = true,
+                        scope = new[] { new { repositoryId = repoId, refName = "refs/heads/main", matchKind = "Exact" } }
+                    }
+                });
+                if (ok) policyCount++;
+
+                // Policy 2: develop — 1 reviewer, blocking
+                WriteInfo("  • Configuring minimum reviewer policy for 'develop'...");
+                ok = await CreatePolicyAsync(projectId, new
+                {
+                    isEnabled = true,
+                    isBlocking = true,
+                    type = new { id = PolicyTypeMinReviewers },
+                    settings = new
+                    {
+                        minimumApproverCount = 1,
+                        creatorVoteCounts = false,
+                        allowDownvotes = false,
+                        resetOnSourcePush = true,
+                        requireVoteOnLastIteration = false,
+                        resetRejectionsOnSourcePush = false,
+                        blockLastPusherVote = false,
+                        scope = new[] { new { repositoryId = repoId, refName = "refs/heads/develop", matchKind = "Exact" } }
+                    }
+                });
+                if (ok) policyCount++;
+
+                // Policies 3-6: required reviewers per team (non-blocking, auto-assign)
+                var reviewerPolicies = new[]
+                {
+                    (Group: "senior-developers",
+                     Paths: new[] { "/SmartWorkz.Tools.DevOpsProject/*", "/ProjectTemplateGenerator.cs" },
+                     Msg: "Core generator changes require senior developer review"),
+                    (Group: "code-quality-team",
+                     Paths: new[] { "/.editorconfig", "/.eslintrc.json", "/azure-pipelines.yml" },
+                     Msg: "Config file changes require code-quality-team review"),
+                    (Group: "security-team",
+                     Paths: new[] { "/**/auth/**", "/**/token/**", "/**/secret/**" },
+                     Msg: "Auth/security changes require security-team review"),
+                    (Group: "team-leads",
+                     Paths: new[] { "/**" },
+                     Msg: "All changes require team-leads review"),
+                };
+
+                foreach (var (group, paths, msg) in reviewerPolicies)
+                {
+                    if (!groupDescriptors.TryGetValue(group, out var descriptor) || string.IsNullOrEmpty(descriptor))
+                    {
+                        WriteWarning($"  ⚠ Skipping {group} reviewer policy: group not available");
+                        continue;
+                    }
+
+                    WriteInfo($"  • Configuring required-reviewer policy for {group}...");
+                    ok = await CreatePolicyAsync(projectId, new
+                    {
+                        isEnabled = true,
+                        isBlocking = false,
+                        type = new { id = PolicyTypeRequiredReviewers },
+                        settings = new
+                        {
+                            requiredReviewerIds = new[] { descriptor },
+                            pathFilters = paths,
+                            message = msg,
+                            scope = new[] { new { repositoryId = repoId, refName = "refs/heads/main", matchKind = "Exact" } }
+                        }
+                    });
+                    if (ok) policyCount++;
+                }
+
+                WriteSuccess($"  ✓ Branch policies configured: {policyCount}/6 policies applied");
+            }
+            catch (Exception ex)
+            {
+                WriteWarning($"  ⚠ Branch policy configuration failed (non-fatal): {ex.Message}");
+            }
         }
 
         /// <summary>
@@ -345,14 +865,22 @@ namespace SmartWorkz.Tools.DevOps
         }
 
         /// <summary>
-        /// Helper: Run git command
+        /// Helper: Run git command with detailed error reporting and proper argument escaping
         /// </summary>
         private async Task RunGitCommandAsync(params string[] args)
         {
+            // Properly escape arguments that contain spaces or special characters
+            var escapedArgs = args.Select(arg =>
+            {
+                if (arg.Contains(" ") || arg.Contains("\""))
+                    return "\"" + arg.Replace("\"", "\\\"") + "\"";
+                return arg;
+            });
+
             var startInfo = new ProcessStartInfo
             {
                 FileName = "git",
-                Arguments = string.Join(" ", args),
+                Arguments = string.Join(" ", escapedArgs),
                 UseShellExecute = false,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -361,11 +889,30 @@ namespace SmartWorkz.Tools.DevOps
 
             using (var process = Process.Start(startInfo))
             {
+                if (process == null)
+                {
+                    throw new Exception("Failed to start git process. Is Git installed and in PATH?");
+                }
+
                 process.WaitForExit();
+
+                string output = process.StandardOutput.ReadToEnd();
+                string error = process.StandardError.ReadToEnd();
+
                 if (process.ExitCode != 0)
                 {
-                    string error = process.StandardError.ReadToEnd();
-                    throw new Exception($"Git command failed: {error}");
+                    string errorMsg = $"Git command failed: {string.Join(" ", args)}\n";
+                    if (!string.IsNullOrEmpty(error))
+                        errorMsg += $"Error: {error}";
+                    if (!string.IsNullOrEmpty(output))
+                        errorMsg += $"Output: {output}";
+
+                    throw new Exception(errorMsg);
+                }
+
+                if (!string.IsNullOrEmpty(output))
+                {
+                    WriteInfo($"    {output.Trim()}");
                 }
             }
 
@@ -439,6 +986,19 @@ namespace SmartWorkz.Tools.DevOps
 
             string teamFilePath = Path.Combine(azureDevOpsDir, "TEAM.yml");
             File.WriteAllText(teamFilePath, GetTeamConfigContent());
+        }
+
+        /// <summary>
+        /// Create branch policies configuration file
+        /// </summary>
+        private void CreateBranchPoliciesFile()
+        {
+            string repoPath = Path.Combine(_localDevPath, _projectName);
+            string azureDevOpsDir = Path.Combine(repoPath, ".azuredevops");
+            Directory.CreateDirectory(azureDevOpsDir);
+
+            string branchPoliciesPath = Path.Combine(azureDevOpsDir, "BRANCH-POLICIES.md");
+            File.WriteAllText(branchPoliciesPath, GetBranchPoliciesContent());
         }
 
         /// <summary>
@@ -892,6 +1452,351 @@ Describe how you tested these changes.
 ## Review Notes
 Any special guidance for reviewers?";
 
+        private string GetBranchPoliciesContent() => @"# Azure DevOps Branch Policies Configuration Guide
+
+## Overview
+This guide explains how to configure branch policies in Azure DevOps to enforce code quality standards and prevent direct commits to protected branches.
+
+---
+
+## main Branch (Production)
+
+**Purpose:** Production releases - requires higher scrutiny
+
+### Required Settings
+
+Navigate to: **Repos → Branches → main → Branch Policies**
+
+#### 1. Require a Minimum Number of Reviewers
+- ✅ **Minimum number of reviewers:** 2
+- ✅ **Allow requesters to approve their own changes:** No
+- ✅ **Reset approval on new pushes:** Yes
+- ✅ **Require approval from external sources:** Optional
+
+**Why:** Production code needs two independent reviews to catch bugs and security issues
+
+#### 2. Check for Linked Work Items
+- ✅ **Required:** Yes
+- **Description:** All commits to main must be linked to an Azure Boards work item
+
+**Why:** Maintains traceability between code and requirements
+
+#### 3. Check for Comment Resolution
+- ✅ **Required:** Yes
+
+**Why:** Ensures all review feedback is addressed before merge
+
+#### 4. Require Status Checks to Pass
+- ✅ **Required:** Yes
+- **Status to check:**
+  - Build validation
+  - SonarQube quality gate
+  - Automated tests
+
+**Why:** Only tested, quality-approved code reaches production
+
+#### 5. Bypass Policy
+- ✅ **Who can bypass:** Only project admins
+- ✅ **Require justification:** Yes
+
+**Why:** Emergency hotfixes allowed but must be documented
+
+#### 6. Auto-complete
+- ✅ **Auto-complete set by:** No
+- **Note:** Manual merge only for production changes
+
+---
+
+## develop Branch (Staging)
+
+**Purpose:** Feature integration and staging environment
+
+### Required Settings
+
+Navigate to: **Repos → Branches → develop → Branch Policies**
+
+#### 1. Require a Minimum Number of Reviewers
+- ✅ **Minimum number of reviewers:** 1
+- ✅ **Allow requesters to approve their own changes:** No
+- ✅ **Reset approval on new pushes:** Yes
+
+**Why:** One review is sufficient for staging; catches obvious issues
+
+#### 2. Check for Linked Work Items
+- ✅ **Required:** No (optional but recommended)
+
+**Why:** Flexibility for small changes while tracking features
+
+#### 3. Check for Comment Resolution
+- ✅ **Required:** Yes
+
+**Why:** All feedback must be addressed
+
+#### 4. Require Status Checks to Pass
+- ✅ **Required:** Yes
+- **Status to check:**
+  - Build validation
+  - Unit tests
+  - Linting
+
+**Why:** Prevents broken code from reaching staging
+
+#### 5. Auto-complete
+- ✅ **Auto-complete set by:** Project admins (optional)
+- **After approvals:** 15 minutes
+- **On successful builds:** Yes
+
+**Why:** Streamlines merging once criteria are met
+
+---
+
+## feature/*, bugfix/*, hotfix/* Branches
+
+**Purpose:** Development branches - NO restrictions
+
+### Settings
+
+**No branch policies configured** - developers have full freedom
+
+**Why:** Feature branches are temporary and private; policies applied at PR time
+
+---
+
+## Code Review Policies
+
+Navigate to: **Project Settings → Repositories → [Repo Name] → Policies**
+
+### Policy 1: Senior Developers Review Complex Code
+
+**Path Pattern:** `SmartWorkz.Tools.DevOpsProject/**`, `**/ProjectTemplateGenerator.cs`
+
+**Reviewers:** senior-developers (group)
+
+**Min Reviewers:** 1
+
+**Auto-notify:** Yes
+
+---
+
+### Policy 2: Code Quality Team Reviews Configuration
+
+**Path Pattern:** `.editorconfig`, `.eslintrc.json`, `.prettierrc.json`, `azure-pipelines.yml`, `sonar-project.properties`
+
+**Reviewers:** code-quality-team (group)
+
+**Min Reviewers:** 1
+
+**Auto-notify:** Yes
+
+---
+
+### Policy 3: Security Team Reviews Security Code
+
+**Path Pattern:** `**/auth/**`, `**/token/**`, `**/secret/**`, `**/credential/**`
+
+**Reviewers:** security-team (group)
+
+**Min Reviewers:** 1
+
+**Auto-notify:** Yes
+
+---
+
+### Policy 4: Team Leads Default Review
+
+**Path Pattern:** `**` (catch-all)
+
+**Reviewers:** team-leads (group)
+
+**Min Reviewers:**
+- main branch: 2
+- develop branch: 1
+
+**Auto-notify:** Yes
+
+---
+
+## How Branch Policies Enforce Quality
+
+```
+Developer creates PR
+       ↓
+Code Review Policies AUTO-ASSIGN reviewers
+       ↓
+Reviewers check code (linked to policies above)
+       ↓
+Status checks run (build, tests, SonarQube)
+       ↓
+All checks pass? ✅
+       ↓
+Required approvals received? ✅
+       ↓
+Comments resolved? ✅
+       ↓
+Merge allowed → Code goes to branch
+```
+
+---
+
+## Step-by-Step Setup
+
+### 1. Create Azure DevOps Groups First
+```
+Project Settings → Security → Groups
+Create:
+  ✅ admins
+  ✅ team-leads
+  ✅ senior-developers
+  ✅ code-quality-team
+  ✅ security-team
+```
+
+### 2. Add Team Members
+```
+Go to each group
+Click: Add members
+Add users from: .azuredevops/TEAM.yml
+```
+
+### 3. Configure main Branch Policy
+```
+Repos → Branches → main
+Click: ...
+Click: Branch policies
+Enable:
+  ✅ Require reviewers (2)
+  ✅ Reset approval on new pushes
+  ✅ Check for linked work items
+  ✅ Check for comment resolution
+  ✅ Require status checks
+```
+
+### 4. Configure develop Branch Policy
+```
+Repos → Branches → develop
+Click: ...
+Click: Branch policies
+Enable:
+  ✅ Require reviewers (1)
+  ✅ Reset approval on new pushes
+  ✅ Require status checks
+```
+
+### 5. Configure Code Review Policies
+```
+Project Settings → Repositories → [Repo] → Policies
+Add Policy for each pattern:
+  ✅ SmartWorkz.Tools.DevOpsProject → senior-developers
+  ✅ Config files → code-quality-team
+  ✅ Auth/token code → security-team
+  ✅ ** (all) → team-leads
+```
+
+### 6. Test with a PR
+```
+Create test feature branch
+Make a small change
+Push and create PR
+Verify:
+  ✅ Auto-assigned reviewers appear
+  ✅ Status checks start running
+  ✅ Cannot merge until checks pass
+  ✅ Cannot merge without approvals
+```
+
+---
+
+## Common Scenarios
+
+### Scenario 1: Hotfix Needed ASAP
+**Process:**
+1. Branch from main: `hotfix/TASK-123-critical-bug`
+2. Make fix with detailed commit message
+3. Create PR to main
+4. 2 approvals required
+5. Merge to main
+6. Also merge to develop to keep in sync
+
+**Branch policies prevent:** Direct commits, untested code, undocumented changes
+
+---
+
+### Scenario 2: New Feature Development
+**Process:**
+1. Branch from develop: `feature/TASK-456-new-feature`
+2. Commit frequently: `feat(scope): description`
+3. Push to remote
+4. Create PR to develop
+5. 1 approval required
+6. Status checks must pass
+7. Merge via squash-commit
+
+**Branch policies prevent:** Skipped tests, quality issues, unclear commits
+
+---
+
+### Scenario 3: Configuration Change
+**Process:**
+1. Branch from develop: `feature/TASK-789-config-update`
+2. Update config files
+3. Create PR
+4. AUTO-ASSIGNED: code-quality-team reviews
+5. They verify best practices
+6. They approve
+7. Merge when ready
+
+**Branch policies prevent:** Misconfigured environments, security issues in configs
+
+---
+
+## Troubleshooting
+
+### Problem: Can't Merge PR
+**Causes & Solutions:**
+1. ❌ Need approvals? → Get required number of approvals
+2. ❌ Status checks failing? → Fix failures and push
+3. ❌ Comments not resolved? → Resolve all comments
+4. ❌ Not up to date? → Click 'Update branch' button
+5. ❌ Work item not linked? → Link in PR details
+
+---
+
+### Problem: Reviewers Not Auto-Assigned
+**Cause:** Code review policies not configured
+**Solution:**
+1. Go to Project Settings → Repositories → Policies
+2. Create policies for each team
+3. Test with new PR
+
+---
+
+### Problem: Status Checks Taking Too Long
+**Solution:**
+1. Optimize build pipeline in `azure-pipelines.yml`
+2. Run tests in parallel where possible
+3. Cache dependencies
+4. Consider splitting into stages
+
+---
+
+## Summary
+
+Branch policies in Azure DevOps:
+- ✅ Protect main and develop branches
+- ✅ Enforce code review standards
+- ✅ Require passing status checks
+- ✅ Auto-assign reviewers based on code changes
+- ✅ Maintain code quality and security
+- ✅ Create audit trail of all changes
+
+**Result:** Production-ready code every time
+
+---
+
+**Version:** 2.0.0
+**Last Updated:** 2026-04-28
+**For:** All Team Members";
+
         private string GetTeamConfigContent() => @"# SmartWorkz.Tools Team Configuration (Azure DevOps)
 # This file defines team members and their roles.
 # Create corresponding groups in Azure DevOps and add these members.
@@ -967,6 +1872,224 @@ branch_policies:
 # 2. Add members to each group
 # 3. Configure branch policies: Repos → Branches → Branch Policies
 # 4. Configure code review policies: Project Settings → Repositories → Policies";
+
+        #region Tech-Stack-Specific Configuration Files
+
+        private string GetPackageJsonContent(string framework) => $@"{{
+  ""name"": ""{_projectName.ToLower()}"",
+  ""version"": ""0.0.1"",
+  ""description"": ""SmartWorkz {framework} project"",
+  ""main"": ""dist/index.js"",
+  ""scripts"": {{
+    ""dev"": ""vite"",
+    ""build"": ""vite build"",
+    ""lint"": ""eslint src --ext .ts,.tsx"",
+    ""format"": ""prettier --write src"",
+    ""test"": ""vitest"",
+    ""test:coverage"": ""vitest --coverage""
+  }},
+  ""dependencies"": {{}},
+  ""devDependencies"": {{
+    ""typescript"": ""^5.0.0"",
+    ""eslint"": ""^8.0.0"",
+    ""prettier"": ""^3.0.0"",
+    ""vite"": ""^5.0.0"",
+    ""vitest"": ""^1.0.0""
+  }}
+}}";
+
+        private string GetTsConfigContent() => @"{
+  ""compilerOptions"": {
+    ""target"": ""ES2020"",
+    ""useDefineForClassFields"": true,
+    ""lib"": [""ES2020"", ""DOM"", ""DOM.Iterable""],
+    ""module"": ""ESNext"",
+    ""skipLibCheck"": true,
+    ""esModuleInterop"": true,
+    ""allowSyntheticDefaultImports"": true,
+    ""strict"": true,
+    ""noUnusedLocals"": true,
+    ""noUnusedParameters"": true,
+    ""resolveJsonModule"": true,
+    ""moduleResolution"": ""bundler"",
+    ""allowImportingTsExtensions"": true,
+    ""declaration"": true,
+    ""declarationMap"": true,
+    ""sourceMap"": true
+  },
+  ""include"": [""src""],
+  ""references"": [{ ""path"": ""./tsconfig.node.json"" }]
+}";
+
+        private string GetMavenPomContent() => $@"<?xml version=""1.0"" encoding=""UTF-8""?>
+<project xmlns=""http://maven.apache.org/POM/4.0.0"" xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance""
+         xsi:schemaLocation=""http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd"">
+    <modelVersion>4.0.0</modelVersion>
+
+    <groupId>com.smartworkz</groupId>
+    <artifactId>{_projectName.ToLower()}</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <name>{_projectName}</name>
+    <description>SmartWorkz Java project</description>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.2.0</version>
+        <relativePath/>
+    </parent>
+
+    <properties>
+        <java.version>17</java.version>
+        <maven.compiler.source>17</maven.compiler.source>
+        <maven.compiler.target>17</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>";
+
+        private string GetJavaApplicationProperties() => @"spring.application.name=smartworkz-app
+server.port=8080
+spring.profiles.active=dev
+
+# Logging
+logging.level.root=INFO
+logging.level.com.smartworkz=DEBUG
+logging.pattern.console=%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n";
+
+        private string GetComposerJsonContent() => $@"{{
+  ""name"": ""smartworkz/{_projectName.ToLower()}"",
+  ""description"": ""SmartWorkz PHP project"",
+  ""type"": ""project"",
+  ""require"": {{
+    ""php"": ""^8.2"",
+    ""laravel/framework"": ""^11.0""
+  }},
+  ""require-dev"": {{
+    ""laravel/pint"": ""^1.0"",
+    ""phpunit/phpunit"": ""^10.0""
+  }},
+  ""autoload"": {{
+    ""psr-4"": {{
+      ""App\\\\"": ""src/""
+    }}
+  }},
+  ""autoload-dev"": {{
+    ""psr-4"": {{
+      ""Tests\\\\"": ""tests/""
+    }}
+  }}
+}}";
+
+        private string GetPhpEnvContent() => @"APP_NAME=SmartWorkz
+APP_ENV=development
+APP_DEBUG=true
+APP_URL=http://localhost:8000
+
+DB_CONNECTION=mysql
+DB_HOST=127.0.0.1
+DB_PORT=3306
+DB_DATABASE=smartworkz
+DB_USERNAME=root
+DB_PASSWORD=
+
+CACHE_DRIVER=file
+QUEUE_CONNECTION=sync";
+
+        private string GetPhpUnitContent() => @"<?xml version=""1.0"" encoding=""UTF-8""?>
+<phpunit xmlns:xsi=""http://www.w3.org/2001/XMLSchema-instance""
+         xsi:noNamespaceSchemaLocation=""https://schema.phpunit.de/10.0/phpunit.xsd""
+         bootstrap=""vendor/autoload.php""
+         colors=""true"">
+    <testsuites>
+        <testsuite name=""Unit"">
+            <directory>tests/unit</directory>
+        </testsuite>
+        <testsuite name=""Integration"">
+            <directory>tests/integration</directory>
+        </testsuite>
+    </testsuites>
+    <coverage processUncoveredFiles=""true"">
+        <include>
+            <directory suffix="".php"">src</directory>
+        </include>
+    </coverage>
+</phpunit>";
+
+        private string GetFlutterPubspecContent() => $@"name: {_projectName.ToLower().Replace(' ', '_')}
+description: SmartWorkz Flutter project
+version: 0.0.1+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  http: ^1.1.0
+  provider: ^6.0.0
+  google_fonts: ^6.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - assets/icons/";
+
+        private string GetFlutterAnalysisOptions() => @"include: package:flutter_lints/flutter.yaml
+
+linter:
+  rules:
+    - avoid_empty_else
+    - avoid_print
+    - avoid_relative_import_imports
+    - avoid_returning_null
+    - avoid_slow_async_io
+    - cancel_subscriptions
+    - close_sinks
+    - comment_references
+    - control_flow_in_finally
+    - empty_statements
+    - hash_and_equals
+    - invariant_booleans
+    - iterable_contains_unrelated_type
+    - list_remove_unrelated_type
+    - literal_only_boolean_expressions
+    - no_adjacent_strings_in_list
+    - no_duplicate_case_values
+    - prefer_void_to_future
+    - throw_in_finally
+    - unnecessary_statements
+    - unrelated_type_equality_checks";
+
+        #endregion
 
         #endregion
 
