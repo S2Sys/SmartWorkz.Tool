@@ -411,23 +411,23 @@ namespace SmartWorkz.Tools.DevOps
                 // Read team file
                 string teamContent = File.ReadAllText(teamFilePath);
 
-                // Create groups and add members
+                // Look for existing groups and add members
                 foreach (var group in groupConfig)
                 {
                     string groupName = group.Key;
                     string yamlKey = group.Value;
 
-                    // Create group
-                    string groupId = await CreateGroupAsync(groupName);
+                    // Try to find existing group
+                    string? groupId = await GetGroupIdAsync(groupName);
 
                     if (string.IsNullOrEmpty(groupId))
                     {
-                        WriteWarning($"  ⚠ Could not create group: {groupName}");
+                        WriteWarning($"  ⚠ Group '{groupName}' not found. Create manually: Project Settings → Security → Groups");
                         continue;
                     }
 
                     groupDescriptors[groupName] = groupId;
-                    WriteInfo($"  ✓ Created group: {groupName}");
+                    WriteInfo($"  ✓ Found group: {groupName}");
 
                     // Extract emails for this group from team file
                     var emails = ExtractEmailsFromTeamFile(teamContent, yamlKey);
