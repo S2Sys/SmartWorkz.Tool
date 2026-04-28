@@ -124,22 +124,17 @@ namespace SmartWorkz.Tools.DevOps
                 CreateTeamConfigFile();
                 WriteSuccess("✓ Team configuration created");
 
-                // Step 7: Create Azure DevOps Groups and Add Members
-                WriteInfo("\nStep 7: Creating Azure DevOps groups and adding team members...");
-                var groupDescriptors = await CreateGroupsAndAddMembersAsync();
-                WriteSuccess("✓ Groups created and members added");
-
-                // Step 8: Git operations
-                WriteInfo("\nStep 8: Initializing git repository...");
+                // Step 7: Git operations
+                WriteInfo("\nStep 7: Initializing git repository...");
                 await GitAddCommitPushAsync();
                 WriteSuccess("✓ Repository initialized and pushed");
 
-                // Step 9: Configure Branch Policies
-                WriteInfo("\nStep 9: Configuring branch policies and required reviewers...");
-                await ConfigureBranchPoliciesAsync(projectId, groupDescriptors);
+                // Step 8: Configure Branch Policies
+                WriteInfo("\nStep 8: Configuring branch policies...");
+                await ConfigureBranchPoliciesAsync(projectId);
                 WriteSuccess("✓ Branch policy configuration complete");
 
-                // Step 10: Summary with initialization guide
+                // Step 9: Summary with initialization guide
                 WriteInfo("\n" + new string('=', 50));
                 WriteSuccess("✓ Project setup completed!");
                 WriteInfo("\n📋 INITIALIZATION CHECKLIST:");
@@ -150,10 +145,7 @@ namespace SmartWorkz.Tools.DevOps
                 WriteInfo("  • Git hooks configured locally (commit validation)");
                 WriteInfo("  • CODEOWNERS file created");
                 WriteInfo("  • PR template configured");
-                WriteInfo("  • Azure DevOps groups created (admins, team-leads, senior-developers, code-quality-team, security-team)");
-                WriteInfo("  • Team members added to groups (from .azuredevops/TEAM.yml)");
                 WriteInfo("  • Branch policies configured (main: 2 reviewers, develop: 1 reviewer)");
-                WriteInfo("  • Required reviewer policies applied (senior-devs, code-quality, security, team-leads)");
                 WriteInfo("  • Repository initialized with initial commit");
                 WriteInfo("\n📋 Project is ready for development!");
                 WriteInfo("\n⚠️  Manual Setup Remaining (Optional Enhancements):");
@@ -733,10 +725,11 @@ namespace SmartWorkz.Tools.DevOps
         }
 
         /// <summary>
-        /// Step 9: Configure branch policies and required reviewer policies via the Azure DevOps Policy API.
+        /// Step 8: Configure branch policies via the Azure DevOps Policy API.
+        /// Creates minimum reviewer policies for main (2) and develop (1) branches.
         /// All failures are non-fatal — a warning is written and execution continues.
         /// </summary>
-        private async Task ConfigureBranchPoliciesAsync(string projectId, Dictionary<string, string> groupDescriptors)
+        private async Task ConfigureBranchPoliciesAsync(string projectId)
         {
             try
             {
@@ -744,13 +737,13 @@ namespace SmartWorkz.Tools.DevOps
                 string? repoId = await WaitForRepositoryReadyAsync(projectId);
                 if (string.IsNullOrEmpty(repoId))
                 {
-                    WriteWarning("  ⚠ Skipping all branch policies: repository not available");
+                    WriteWarning("  ⚠ Skipping branch policies: repository not available");
                     return;
                 }
 
                 int policyCount = 0;
 
-                // Policy 1: main — 2 reviewers, blocking
+                // Policy 1: main — 2 reviewers, no self-approve, blocking
                 WriteInfo("  • Configuring minimum reviewer policy for 'main'...");
                 bool ok = await CreatePolicyAsync(projectId, new
                 {
@@ -763,8 +756,6 @@ namespace SmartWorkz.Tools.DevOps
                         creatorVoteCounts = false,
                         allowDownvotes = false,
                         resetOnSourcePush = true,
-                        requireVoteOnLastIteration = false,
-                        resetRejectionsOnSourcePush = false,
                         blockLastPusherVote = true,
                         scope = new[] { new { repositoryId = repoId, refName = "refs/heads/main", matchKind = "Exact" } }
                     }
@@ -784,57 +775,13 @@ namespace SmartWorkz.Tools.DevOps
                         creatorVoteCounts = false,
                         allowDownvotes = false,
                         resetOnSourcePush = true,
-                        requireVoteOnLastIteration = false,
-                        resetRejectionsOnSourcePush = false,
                         blockLastPusherVote = false,
                         scope = new[] { new { repositoryId = repoId, refName = "refs/heads/develop", matchKind = "Exact" } }
                     }
                 });
                 if (ok) policyCount++;
 
-                // Policies 3-6: required reviewers per team (non-blocking, auto-assign)
-                var reviewerPolicies = new[]
-                {
-                    (Group: "senior-developers",
-                     Paths: new[] { "/SmartWorkz.Tools.DevOpsProject/*", "/ProjectTemplateGenerator.cs" },
-                     Msg: "Core generator changes require senior developer review"),
-                    (Group: "code-quality-team",
-                     Paths: new[] { "/.editorconfig", "/.eslintrc.json", "/azure-pipelines.yml" },
-                     Msg: "Config file changes require code-quality-team review"),
-                    (Group: "security-team",
-                     Paths: new[] { "/**/auth/**", "/**/token/**", "/**/secret/**" },
-                     Msg: "Auth/security changes require security-team review"),
-                    (Group: "team-leads",
-                     Paths: new[] { "/**" },
-                     Msg: "All changes require team-leads review"),
-                };
-
-                foreach (var (group, paths, msg) in reviewerPolicies)
-                {
-                    if (!groupDescriptors.TryGetValue(group, out var descriptor) || string.IsNullOrEmpty(descriptor))
-                    {
-                        WriteWarning($"  ⚠ Skipping {group} reviewer policy: group not available");
-                        continue;
-                    }
-
-                    WriteInfo($"  • Configuring required-reviewer policy for {group}...");
-                    ok = await CreatePolicyAsync(projectId, new
-                    {
-                        isEnabled = true,
-                        isBlocking = false,
-                        type = new { id = PolicyTypeRequiredReviewers },
-                        settings = new
-                        {
-                            requiredReviewerIds = new[] { descriptor },
-                            pathFilters = paths,
-                            message = msg,
-                            scope = new[] { new { repositoryId = repoId, refName = "refs/heads/main", matchKind = "Exact" } }
-                        }
-                    });
-                    if (ok) policyCount++;
-                }
-
-                WriteSuccess($"  ✓ Branch policies configured: {policyCount}/6 policies applied");
+                WriteSuccess($"  ✓ Branch policies configured: {policyCount}/2 policies applied");
             }
             catch (Exception ex)
             {
