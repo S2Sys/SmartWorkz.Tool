@@ -287,7 +287,7 @@ namespace SmartWorkz.Tools.DevOps
         }
 
         /// <summary>
-        /// Step 4: Git operations - add, commit, push
+        /// Step 6: Git operations - add, commit, push
         /// </summary>
         private async Task GitAddCommitPushAsync()
         {
@@ -303,7 +303,13 @@ namespace SmartWorkz.Tools.DevOps
                 CreateNoWindow = true
             };
 
-            using (var process = Process.Start(startInfo))
+            var process = Process.Start(startInfo);
+            if (process == null)
+            {
+                throw new Exception("Failed to start git process");
+            }
+
+            using (process)
             {
                 process.WaitForExit();
                 if (process.ExitCode != 0)
