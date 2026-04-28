@@ -30,18 +30,6 @@ namespace SmartWorkz.Tools.DevOps
         private const string ScrumTemplateId = "adcc42ab-9882-485e-a3ed-7678f01f66bc";
         private const int ProjectInitDelaySeconds = 5;
 
-        // Policy Type GUIDs
-        private const string PolicyTypeMinReviewers      = "fa4e907d-8a14-494a-85d6-a89a79de8486";
-        private const string PolicyTypeRequiredReviewers = "fd2167ab-b0be-447a-8ec8-39368250530e";
-        private const string PolicyTypeCommentResolution = "c6a27be9-7728-4974-aa4d-753382dc3551";
-        private const string PolicyTypeWorkItemLinking   = "40e92b44-2fe1-4dd6-b3d8-74a9c21d0c6e";
-
-        // Retry / Polling
-        private const int PolicyRetryCount        = 3;
-        private const int PolicyRetryDelaySeconds = 2;
-        private const int RepoReadyMaxAttempts    = 10;
-        private const int RepoReadyPollSeconds    = 5;
-
         // Valid project types
         private static readonly string[] ValidProjectTypes =
         {
@@ -129,12 +117,7 @@ namespace SmartWorkz.Tools.DevOps
                 await GitAddCommitPushAsync();
                 WriteSuccess("✓ Repository initialized and pushed");
 
-                // Step 8: Configure Branch Policies
-                WriteInfo("\nStep 8: Configuring branch policies...");
-                await ConfigureBranchPoliciesAsync(projectId);
-                WriteSuccess("✓ Branch policy configuration complete");
-
-                // Step 9: Summary with initialization guide
+                // Step 8: Summary with initialization guide
                 WriteInfo("\n" + new string('=', 50));
                 WriteSuccess("✓ Project setup completed!");
                 WriteInfo("\n📋 INITIALIZATION CHECKLIST:");
@@ -145,7 +128,6 @@ namespace SmartWorkz.Tools.DevOps
                 WriteInfo("  • Git hooks configured locally (commit validation)");
                 WriteInfo("  • CODEOWNERS file created");
                 WriteInfo("  • PR template configured");
-                WriteInfo("  • Branch policies configured (main: 2 reviewers, develop: 1 reviewer)");
                 WriteInfo("  • Repository initialized with initial commit");
                 WriteInfo("\n📋 Project is ready for development!");
                 WriteInfo("\n⚠️  Manual Setup Remaining (Optional Enhancements):");
@@ -625,170 +607,6 @@ namespace SmartWorkz.Tools.DevOps
         /// <summary>
         /// Helper: Execute an async operation with exponential backoff retry.
         /// </summary>
-        private async Task<T> RetryAsync<T>(Func<Task<T>> action, int maxRetries = PolicyRetryCount, int delaySeconds = PolicyRetryDelaySeconds)
-        {
-            int attempt = 0;
-            while (true)
-            {
-                try
-                {
-                    return await action();
-                }
-                catch (Exception ex) when (attempt < maxRetries)
-                {
-                    attempt++;
-                    int waitMs = delaySeconds * (int)Math.Pow(2, attempt - 1) * 1000;
-                    WriteWarning($"  ⚠ Retry {attempt}/{maxRetries} after {waitMs / 1000}s: {ex.Message}");
-                    await Task.Delay(waitMs);
-                }
-            }
-        }
-
-        /// <summary>
-        /// Fetch the repository GUID for the project's default repository.
-        /// Returns null if the repository does not yet exist or on any error.
-        /// </summary>
-        private async Task<string?> GetRepositoryIdAsync(string projectId)
-        {
-            try
-            {
-                var response = await _httpClient.GetAsync(
-                    $"{_organizationUrl}/{_projectName}/_apis/git/repositories/{_projectName}?api-version=7.0");
-
-                if (!response.IsSuccessStatusCode)
-                    return null;
-
-                var responseBody = await response.Content.ReadAsStringAsync();
-                using JsonDocument doc = JsonDocument.Parse(responseBody);
-                return doc.RootElement.GetProperty("id").GetString();
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        /// <summary>
-        /// Poll until the default repository is available (created and initialised after project creation).
-        /// Returns the repository GUID, or null if it never becomes ready within the allowed attempts.
-        /// </summary>
-        private async Task<string?> WaitForRepositoryReadyAsync(string projectId)
-        {
-            WriteInfo($"  • Waiting for repository (max {RepoReadyMaxAttempts} attempts)...");
-            for (int attempt = 1; attempt <= RepoReadyMaxAttempts; attempt++)
-            {
-                string? repoId = await GetRepositoryIdAsync(projectId);
-
-                if (!string.IsNullOrEmpty(repoId))
-                {
-                    WriteInfo($"  • Repository ready: {repoId}");
-                    return repoId;
-                }
-
-                WriteInfo($"  • Attempt {attempt}/{RepoReadyMaxAttempts}: not ready, waiting {RepoReadyPollSeconds}s...");
-                await Task.Delay(RepoReadyPollSeconds * 1000);
-            }
-
-            WriteWarning($"  ⚠ Repository not ready after {RepoReadyMaxAttempts} attempts");
-            return null;
-        }
-
-        /// <summary>
-        /// POST a single policy configuration. Non-fatal: returns false and warns on any failure.
-        /// </summary>
-        private async Task<bool> CreatePolicyAsync(string projectId, object policyBody)
-        {
-            try
-            {
-                return await RetryAsync(async () =>
-                {
-                    string jsonBody = JsonSerializer.Serialize(policyBody);
-                    var content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
-
-                    var response = await _httpClient.PostAsync(
-                        $"{_organizationUrl}/{_projectName}/_apis/policy/configurations?api-version=7.0",
-                        content);
-
-                    if (response.IsSuccessStatusCode)
-                        return true;
-
-                    string err = await response.Content.ReadAsStringAsync();
-                    WriteWarning($"  ⚠ Policy failed ({response.StatusCode}): {err}");
-                    return false;
-                });
-            }
-            catch (Exception ex)
-            {
-                WriteWarning($"  ⚠ Policy error (non-fatal): {ex.Message}");
-                return false;
-            }
-        }
-
-        /// <summary>
-        /// Step 8: Configure branch policies via the Azure DevOps Policy API.
-        /// Creates minimum reviewer policies for main (2) and develop (1) branches.
-        /// All failures are non-fatal — a warning is written and execution continues.
-        /// </summary>
-        private async Task ConfigureBranchPoliciesAsync(string projectId)
-        {
-            try
-            {
-                // Get repository ID (poll until ready)
-                string? repoId = await WaitForRepositoryReadyAsync(projectId);
-                if (string.IsNullOrEmpty(repoId))
-                {
-                    WriteWarning("  ⚠ Skipping branch policies: repository not available");
-                    return;
-                }
-
-                int policyCount = 0;
-
-                // Policy 1: main — 2 reviewers, no self-approve, blocking
-                WriteInfo("  • Configuring minimum reviewer policy for 'main'...");
-                bool ok = await CreatePolicyAsync(projectId, new
-                {
-                    isEnabled = true,
-                    isBlocking = true,
-                    type = new { id = PolicyTypeMinReviewers },
-                    settings = new
-                    {
-                        minimumApproverCount = 2,
-                        creatorVoteCounts = false,
-                        allowDownvotes = false,
-                        resetOnSourcePush = true,
-                        blockLastPusherVote = true,
-                        scope = new[] { new { repositoryId = repoId, refName = "refs/heads/main", matchKind = "Exact" } }
-                    }
-                });
-                if (ok) policyCount++;
-
-                // Policy 2: develop — 1 reviewer, blocking
-                WriteInfo("  • Configuring minimum reviewer policy for 'develop'...");
-                ok = await CreatePolicyAsync(projectId, new
-                {
-                    isEnabled = true,
-                    isBlocking = true,
-                    type = new { id = PolicyTypeMinReviewers },
-                    settings = new
-                    {
-                        minimumApproverCount = 1,
-                        creatorVoteCounts = false,
-                        allowDownvotes = false,
-                        resetOnSourcePush = true,
-                        blockLastPusherVote = false,
-                        scope = new[] { new { repositoryId = repoId, refName = "refs/heads/develop", matchKind = "Exact" } }
-                    }
-                });
-                if (ok) policyCount++;
-
-                WriteSuccess($"  ✓ Branch policies configured: {policyCount}/2 policies applied");
-            }
-            catch (Exception ex)
-            {
-                WriteWarning($"  ⚠ Branch policy configuration failed (non-fatal): {ex.Message}");
-            }
-        }
-
         /// <summary>
         /// Helper: Create HTTP client with basic auth
         /// </summary>
